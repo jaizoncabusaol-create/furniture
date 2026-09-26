@@ -1,5 +1,5 @@
 <?php
-session_start();
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'session.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'db.php';
 
 if (isset($_GET['logout'])) {
@@ -1420,7 +1420,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if ($updated) {
             appSaveStore($store);
-            setUserFlashNotice($action === 'delete_customization_request' ? 'Order moved to Deleted History.' : 'Order cancelled.');
+            setUserFlashNotice($action === 'delete_customization_request' ? 'Order deleted.' : 'Order cancelled.');
             header('Location: user.php?view=orders&order_type=customization');
             exit;
         }
@@ -1451,7 +1451,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if (count($store['orders']) !== $beforeCount) {
             appSaveStore($store);
-            setUserFlashNotice('Order moved to Deleted History.');
+            setUserFlashNotice('Order deleted.');
             header('Location: user.php?view=orders');
             exit;
         }
@@ -5957,7 +5957,7 @@ $canPlaceOrder = userHasCompleteOrderProfile($currentUserRecord);
                                     </form>
                                 <?php endif; ?>
                                 <?php if (in_array((string) ($request['status'] ?? ''), ['Pending', 'Cancelled'], true)): ?>
-                                    <form method="post" onsubmit="return confirm('Move this customization request to Deleted History?');">
+                                    <form method="post" onsubmit="return confirm('Delete this customization request?');">
                                         <input type="hidden" name="action" value="delete_customization_request">
                                         <input type="hidden" name="request_id" value="<?= htmlspecialchars((string) ($request['id'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
                                         <button class="message-btn" type="submit">Delete Request</button>
@@ -6014,25 +6014,6 @@ $canPlaceOrder = userHasCompleteOrderProfile($currentUserRecord);
                         <?php endforeach; ?>
                         <?php endif; ?>
                     <?php endif; ?>
-                    <details class="customization-chat" style="margin-top:16px;">
-                        <summary>Deleted History (<?= count($customerDeletedOrders) ?>)</summary>
-                        <?php if ($customerDeletedOrders === []): ?>
-                            <p class="empty-state">No deleted orders.</p>
-                        <?php else: ?>
-                            <?php foreach ($customerDeletedOrders as $deletedEntry): ?>
-                                <?php $deletedOrder = $deletedEntry['record']; ?>
-                                <div class="order-card" style="margin-top:10px;">
-                                    <strong><?= htmlspecialchars((string) ($deletedOrder['product_name'] ?? 'Order'), ENT_QUOTES, 'UTF-8') ?></strong>
-                                    <p><?= ($deletedEntry['type'] ?? '') === 'customization' ? 'Customization' : 'Normal Order' ?> · <?= htmlspecialchars((string) ($deletedOrder['id'] ?? ''), ENT_QUOTES, 'UTF-8') ?> · Deleted <?= htmlspecialchars((string) ($deletedEntry['deleted_at'] ?? ''), ENT_QUOTES, 'UTF-8') ?></p>
-                                    <form method="post">
-                                        <input type="hidden" name="action" value="restore_deleted_order">
-                                        <input type="hidden" name="archive_id" value="<?= htmlspecialchars((string) ($deletedEntry['id'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
-                                        <button class="mini-btn" type="submit">Restore</button>
-                                    </form>
-                                </div>
-                            <?php endforeach; ?>
-                        <?php endif; ?>
-                    </details>
                 </section>
             <?php endif; ?>
 

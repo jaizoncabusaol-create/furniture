@@ -1,5 +1,5 @@
 <?php
-session_start();
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'session.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'db.php';
 
 $notice = '';
@@ -55,7 +55,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $emailExists = false;
 
             foreach ($users as $user) {
-                if (($user['email'] ?? '') === $registerEmail) {
+                if (strcasecmp((string) ($user['email'] ?? ''), $registerEmail) === 0) {
                     $emailExists = true;
                     break;
                 }
@@ -86,7 +86,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $matchedGoogleUser = null;
 
         foreach ($users as $user) {
-            if (($user['email'] ?? '') === $googleDemoUser['email']) {
+            if (strcasecmp((string) ($user['email'] ?? ''), $googleDemoUser['email']) === 0) {
                 $matchedGoogleUser = $user;
                 break;
             }
@@ -119,7 +119,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $matchedUser = null;
 
         foreach ($users as $user) {
-            if (($user['email'] ?? '') === $loginIdentifier || ($user['name'] ?? '') === $loginIdentifier) {
+            if (
+                strcasecmp((string) ($user['email'] ?? ''), $loginIdentifier) === 0
+                || strcasecmp((string) ($user['name'] ?? ''), $loginIdentifier) === 0
+            ) {
                 $matchedUser = $user;
                 break;
             }
@@ -191,12 +194,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             box-sizing: border-box;
         }
 
+        html {
+            width: 100%;
+            overflow-x: hidden;
+        }
+
         body {
             margin: 0;
             min-height: 100vh;
+            min-height: 100dvh;
+            width: 100%;
             display: grid;
             place-items: center;
             padding: 24px;
+            overflow-x: hidden;
             font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
             background: radial-gradient(circle at top left, #ffffff 0, #eef4ff 42%, #dbeafe 100%);
             color: var(--text);
@@ -482,9 +493,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         @media (max-width: 480px) {
+            body {
+                place-items: start center;
+                padding: 12px 10px;
+            }
+
+            .login-shell {
+                max-width: 100%;
+            }
+
             .login-card,
             .modal {
                 padding: 20px 16px 16px;
+            }
+
+            .login-card {
+                width: 100%;
+            }
+
+            .field input {
+                font-size: 16px;
             }
 
             .brand h1,
