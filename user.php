@@ -32,8 +32,6 @@ $flashNotice = $_SESSION['user_flash_notice'] ?? null;
 unset($_SESSION['user_flash_notice']);
 $notice = is_array($flashNotice) ? (string) ($flashNotice['message'] ?? '') : '';
 $noticeType = is_array($flashNotice) ? (string) ($flashNotice['type'] ?? 'success') : 'success';
-$restoreDone = !empty($_SESSION['user_restore_done']);
-unset($_SESSION['user_restore_done']);
 $uploadDir = __DIR__ . DIRECTORY_SEPARATOR . 'uploads';
 $uploadWebPath = 'uploads';
 $search = trim($_GET['search'] ?? '');
@@ -46,6 +44,7 @@ if (strcasecmp($selectedCategory, 'all') === 0) {
 }
 $selectedView = trim($_GET['view'] ?? 'home');
 $selectedOrderType = ($_GET['order_type'] ?? '') === 'customization' ? 'customization' : 'normal';
+$selectedOrderId = trim((string) ($_GET['order'] ?? ''));
 $selectedProductId = trim($_GET['product'] ?? '');
 $selectedCategoryPopup = trim($_GET['catpopup'] ?? '');
 $showFilterPopup = trim($_GET['filter'] ?? '') === 'categories';
@@ -1461,32 +1460,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $selectedView = 'orders';
     }
 
-    if ($action === 'restore_deleted_order') {
-        $archiveId = trim((string) ($_POST['archive_id'] ?? ''));
-        $matchingEntry = null;
-        foreach (($store['deleted_records'] ?? []) as $entry) {
-            if ((string) ($entry['id'] ?? '') === $archiveId) {
-                $matchingEntry = $entry;
-                break;
-            }
-        }
-        $type = (string) ($matchingEntry['type'] ?? '');
-        $ownerEmail = (string) (($matchingEntry['record'] ?? [])['customer_email'] ?? '');
-        if (!in_array($type, ['order', 'customization'], true) || $ownerEmail === ''
-            || strcasecmp($ownerEmail, (string) ($currentUser['email'] ?? '')) !== 0
-            || !appRestoreDeletedRecord($store, $archiveId)) {
-            $notice = 'This deleted order could not be restored.';
-            $noticeType = 'error';
-        } else {
-            appSaveStore($store);
-            setUserFlashNotice('Order restored to My Orders.');
-            $_SESSION['user_restore_done'] = true;
-            header('Location: user.php?view=orders&order_type=' . ($type === 'customization' ? 'customization' : 'normal'));
-            exit;
-        }
-        $selectedView = 'orders';
-    }
-
     if ($action === 'remove_cart_item') {
         $cartId = trim($_POST['cart_id'] ?? '');
         $store['carts'] = array_values(array_filter(($store['carts'] ?? []), function ($item) use ($cartId, $currentUser) {
@@ -1661,7 +1634,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         if ($restored) {
             appSaveStore($store);
-            $_SESSION['user_restore_done'] = true;
+            setUserFlashNotice('Chat restored.');
             header('Location: user.php?view=messages');
             exit;
         }
@@ -1876,9 +1849,12 @@ foreach ($cartItems as $item) {
 
 $categories = [];
 $categoryCards = [];
+$categoryKeys = [];
 foreach ($storedCategories as $category) {
     $categoryName = trim((string) ($category['name'] ?? ''));
-    if ($categoryName !== '' && !in_array($categoryName, $categories, true)) {
+    $categoryKey = strtolower($categoryName);
+    if ($categoryName !== '' && !isset($categoryKeys[$categoryKey])) {
+        $categoryKeys[$categoryKey] = true;
         $categories[] = $categoryName;
         $categoryCards[] = [
             'name' => $categoryName,
@@ -1890,7 +1866,9 @@ foreach ($storedCategories as $category) {
 
 foreach ($products as $product) {
     $categoryName = trim((string) ($product['category'] ?? ''));
-    if ($categoryName !== '' && !in_array($categoryName, $categories, true)) {
+    $categoryKey = strtolower($categoryName);
+    if ($categoryName !== '' && !isset($categoryKeys[$categoryKey])) {
+        $categoryKeys[$categoryKey] = true;
         $categories[] = $categoryName;
         $categoryCards[] = [
             'name' => $categoryName,
@@ -1900,8 +1878,15 @@ foreach ($products as $product) {
     }
 }
 
-if (!in_array($selectedCategory, $categories, true)) {
-    $selectedCategory = '';
+if ($selectedCategory !== '') {
+    $matchingCategory = null;
+    foreach ($categories as $categoryName) {
+        if (strcasecmp($categoryName, $selectedCategory) === 0) {
+            $matchingCategory = $categoryName;
+            break;
+        }
+    }
+    $selectedCategory = $matchingCategory ?? '';
 }
 
 if ($selectedCategoryPopup !== '' && !in_array($selectedCategoryPopup, $categories, true)) {
@@ -1916,7 +1901,7 @@ $filteredProducts = array_values(array_filter($products, function ($product) use
         }
     }
 
-    if ($selectedCategory !== '' && ($product['category'] ?? '') !== $selectedCategory) {
+    if ($selectedCategory !== '' && strcasecmp((string) ($product['category'] ?? ''), $selectedCategory) !== 0) {
         return false;
     }
 
@@ -2040,11 +2025,25 @@ $selectedMixPayload = $selectedMixDesign !== null ? [
 $customerCustomizationRequests = array_values(array_filter($store['customization_requests'] ?? [], function ($request) use ($currentUser) {
     return strtolower((string) ($request['customer_email'] ?? '')) === strtolower((string) ($currentUser['email'] ?? ''));
 }));
-$customerDeletedOrders = array_values(array_filter($store['deleted_records'] ?? [], static function ($entry) use ($currentUser) {
-    return in_array((string) ($entry['type'] ?? ''), ['order', 'customization'], true)
-        && is_array($entry['record'] ?? null)
-        && strcasecmp((string) ($entry['record']['customer_email'] ?? ''), (string) ($currentUser['email'] ?? '')) === 0;
-}));
+$displayOrders = $orders;
+$displayCustomizationRequests = $customerCustomizationRequests;
+if ($selectedOrderId !== '') {
+    if ($selectedOrderType === 'customization') {
+        $displayCustomizationRequests = array_values(array_filter($customerCustomizationRequests, static function ($request) use ($selectedOrderId) {
+            return (string) ($request['id'] ?? '') === $selectedOrderId;
+        }));
+        if ($displayCustomizationRequests === []) {
+            $selectedOrderId = '';
+        }
+    } else {
+        $displayOrders = array_values(array_filter($orders, static function ($order) use ($selectedOrderId) {
+            return (string) ($order['id'] ?? '') === $selectedOrderId;
+        }));
+        if ($displayOrders === []) {
+            $selectedOrderId = '';
+        }
+    }
+}
 $customizationCategoryOptions = array_values(array_unique(array_filter(array_merge(
     array_map(static function ($category) { return (string) ($category['name'] ?? ''); }, $storedCategories),
     array_map(static function ($product) { return (string) ($product['category'] ?? ''); }, $products)
@@ -5070,9 +5069,15 @@ $canPlaceOrder = userHasCompleteOrderProfile($currentUserRecord);
                 margin-left: 0;
             }
         }
-        .restore-done-overlay { position: fixed; inset: 0; z-index: 9999; display: grid; place-items: center; padding: 20px; background: rgba(12, 25, 50, .55); }
-        .restore-done-card { width: min(100%, 320px); padding: 24px; border-radius: 18px; background: #fff; text-align: center; box-shadow: 0 20px 55px rgba(12, 25, 50, .25); }
-        .restore-done-card p { margin: 0 0 18px; color: var(--brand); font-weight: 700; }
+        .orders-back-link {
+            display: inline-flex;
+            align-items: center;
+            min-height: 36px;
+            margin: 0 0 12px;
+            color: var(--brand);
+            font-size: 0.78rem;
+            font-weight: 800;
+        }
         @media (min-width: 361px) and (max-width: 767px) {
             .app,
             .app.mix-app {
@@ -5863,12 +5868,15 @@ $canPlaceOrder = userHasCompleteOrderProfile($currentUserRecord);
                         <a class="<?= $selectedOrderType === 'normal' ? 'active' : '' ?>" href="user.php?view=orders&order_type=normal">Normal Orders (<?= count($orders) ?>)</a>
                         <a class="<?= $selectedOrderType === 'customization' ? 'active' : '' ?>" href="user.php?view=orders&order_type=customization">Customization Orders (<?= count($customerCustomizationRequests) ?>)<?= $userUnreadCustomizationCount > 0 ? ' · ' . $userUnreadCustomizationCount . ' new' : '' ?></a>
                     </div>
+                    <?php if ($selectedOrderId !== ''): ?>
+                        <a class="orders-back-link" href="user.php?view=orders&amp;order_type=<?= urlencode($selectedOrderType) ?>">&larr; Back to Orders</a>
+                    <?php endif; ?>
                     <?php if (($selectedOrderType === 'normal' && $orders === []) || ($selectedOrderType === 'customization' && $customerCustomizationRequests === [])): ?>
                         <p class="empty-state">No orders yet.</p>
                     <?php else: ?>
                         <?php if ($selectedOrderType === 'customization'): ?>
-                        <?php foreach ($customerCustomizationRequests as $request): ?>
-                            <details class="customization-request-card order-disclosure" name="user-orders">
+                        <?php foreach ($displayCustomizationRequests as $request): ?>
+                            <details class="customization-request-card order-disclosure" name="user-orders" data-order-id="<?= htmlspecialchars((string) ($request['id'] ?? ''), ENT_QUOTES, 'UTF-8') ?>" data-order-type="customization" <?= (string) ($request['id'] ?? '') === $selectedOrderId ? 'open' : '' ?>>
                                 <?php $customImage = trim((string) ($request['product_image'] ?? '')) !== '' ? trim((string) $request['product_image']) : trim((string) ($request['reference_image'] ?? '')); ?>
                                 <?php $awaitingPayment = ($request['status'] ?? '') === 'Down Payment Paid' && empty($request['payment_confirmed']); ?>
                                 <summary class="order-disclosure-summary">
@@ -5967,9 +5975,9 @@ $canPlaceOrder = userHasCompleteOrderProfile($currentUserRecord);
                             </details>
                         <?php endforeach; ?>
                         <?php else: ?>
-                        <?php foreach ($orders as $order): ?>
+                        <?php foreach ($displayOrders as $order): ?>
                             <?php $orderImage = appOrderImagePath($order, $store['products'] ?? [], $store['deleted_records'] ?? []); ?>
-                            <details class="order-card order-disclosure" name="user-orders">
+                            <details class="order-card order-disclosure" name="user-orders" data-order-id="<?= htmlspecialchars((string) ($order['id'] ?? ''), ENT_QUOTES, 'UTF-8') ?>" data-order-type="normal" <?= (string) ($order['id'] ?? '') === $selectedOrderId ? 'open' : '' ?>>
                                 <summary class="order-disclosure-summary">
                                     <?php if ($orderImage !== ''): ?><img class="order-summary-image" src="<?= htmlspecialchars($orderImage, ENT_QUOTES, 'UTF-8') ?>" alt="<?= htmlspecialchars((string) ($order['product_name'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"><?php endif; ?>
                                     <span class="order-summary-main"><strong><?= htmlspecialchars((string) ($order['product_name'] ?? ''), ENT_QUOTES, 'UTF-8') ?></strong><small>Qty <?= (int) ($order['quantity'] ?? 1) ?> · Tap to view details</small></span>
@@ -7592,14 +7600,29 @@ $canPlaceOrder = userHasCompleteOrderProfile($currentUserRecord);
             }
         }());
     </script>
+    <script>
+        document.querySelectorAll('.order-disclosure[data-order-id]').forEach(function (orderCard) {
+            orderCard.addEventListener('toggle', function () {
+                if (!orderCard.open) {
+                    return;
+                }
+
+                const orderId = orderCard.dataset.orderId || '';
+                const orderType = orderCard.dataset.orderType || 'normal';
+                const currentParams = new URLSearchParams(window.location.search);
+                if (currentParams.get('order') === orderId) {
+                    return;
+                }
+
+                const targetParams = new URLSearchParams({
+                    view: 'orders',
+                    order_type: orderType,
+                    order: orderId
+                });
+                window.location.href = 'user.php?' + targetParams.toString();
+            });
+        });
+    </script>
     <script src="language.js"></script>
-    <?php if ($restoreDone): ?>
-        <div class="restore-done-overlay" role="alertdialog" aria-modal="true" aria-label="Restore complete">
-            <div class="restore-done-card">
-                <p>Restore done.</p>
-                <button class="mini-btn" type="button" onclick="this.closest('.restore-done-overlay').remove()">OK</button>
-            </div>
-        </div>
-    <?php endif; ?>
 </body>
 </html>
