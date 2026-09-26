@@ -20,7 +20,7 @@ RUN printf '%s\n' \
     'memory_limit=256M' \
     > /usr/local/etc/php/conf.d/furniquest.ini
 
-COPY index.php admin.php user.php db.php backup.php health.php /var/www/html/
+COPY index.php admin.php user.php db.php backup.php health.php session.php /var/www/html/
 COPY uploads/fur_clean_* /opt/catalog/
 COPY docker-entrypoint.sh /usr/local/bin/furniquest-start
 

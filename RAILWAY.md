@@ -23,7 +23,8 @@ repository root. Use a separate Railway MySQL service for the database.
    image already sets `APP_ENV=production` and `AUTO_CREATE_DATABASE=false`.
    The database tables and catalog are created on first request. A fresh
    production database creates the admin account from `ADMIN_EMAIL` and
-   `ADMIN_PASSWORD`; demo accounts and the demo Google button are disabled.
+   `ADMIN_PASSWORD`. It also creates the default `user` / `123` customer
+   account when that account does not exist. The demo Google button is disabled.
    Changing these variables later does not reset an existing admin password.
 
 4. Attach a **volume** to the web service with mount path `/data`. This keeps

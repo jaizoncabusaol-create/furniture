@@ -545,21 +545,33 @@ function appMigrateJsonToDatabase(mysqli $db, string $storageFile): void
 function appEnsureBaseAccounts(mysqli $db): void
 {
     if ((string) (appConfig()['app_env'] ?? '') === 'production') {
-        if ((int) appDbValue($db, "SELECT COUNT(*) FROM users WHERE role = 'admin'") > 0) {
-            return;
+        if ((int) appDbValue($db, "SELECT COUNT(*) FROM users WHERE role = 'admin'") === 0) {
+            $email = trim((string) getenv('ADMIN_EMAIL'));
+            $password = (string) getenv('ADMIN_PASSWORD');
+            if (!filter_var($email, FILTER_VALIDATE_EMAIL) || strlen($password) < 12) {
+                throw new RuntimeException('Set ADMIN_EMAIL and an ADMIN_PASSWORD of at least 12 characters in production.');
+            }
+
+            appDbExecute(
+                $db,
+                'INSERT INTO users (name, email, password, role, phone, profile_image, address, notifications_enabled, google_auth, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                ['admin', $email, password_hash($password, PASSWORD_DEFAULT), 'admin', '', '', '', 1, 0, date('c')]
+            );
         }
 
-        $email = trim((string) getenv('ADMIN_EMAIL'));
-        $password = (string) getenv('ADMIN_PASSWORD');
-        if (!filter_var($email, FILTER_VALIDATE_EMAIL) || strlen($password) < 12) {
-            throw new RuntimeException('Set ADMIN_EMAIL and an ADMIN_PASSWORD of at least 12 characters in production.');
-        }
-
-        appDbExecute(
+        $defaultUserExists = (int) appDbValue(
             $db,
-            'INSERT INTO users (name, email, password, role, phone, profile_image, address, notifications_enabled, google_auth, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            ['admin', $email, password_hash($password, PASSWORD_DEFAULT), 'admin', '', '', '', 1, 0, date('c')]
-        );
+            'SELECT COUNT(*) FROM users WHERE LOWER(name) = ? OR LOWER(email) = ?',
+            ['user', 'user@demo.local']
+        ) > 0;
+        if (!$defaultUserExists) {
+            appDbExecute(
+                $db,
+                'INSERT INTO users (name, email, password, role, phone, profile_image, address, notifications_enabled, google_auth, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                ['user', 'user@demo.local', password_hash('123', PASSWORD_DEFAULT), 'user', '', '', '', 1, 0, date('c')]
+            );
+        }
+
         return;
     }
 
