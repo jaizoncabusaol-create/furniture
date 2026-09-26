@@ -15,7 +15,9 @@ chown -R www-data:www-data /data
 chmod 700 /data/backups
 ln -sfn /data/uploads /var/www/html/uploads
 
-rm -f /etc/apache2/mods-enabled/mpm_event.load /etc/apache2/mods-enabled/mpm_event.conf
-rm -f /etc/apache2/mods-enabled/mpm_worker.load /etc/apache2/mods-enabled/mpm_worker.conf
+# Ensure only mpm_prefork is enabled
+a2dismod mpm_event 2>/dev/null || true
+a2dismod mpm_worker 2>/dev/null || true
+a2enmod mpm_prefork 2>/dev/null || true
 
 exec apache2-foreground
