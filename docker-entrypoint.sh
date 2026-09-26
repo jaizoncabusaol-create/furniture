@@ -15,4 +15,8 @@ chown -R www-data:www-data /data
 chmod 700 /data/backups
 ln -sfn /data/uploads /var/www/html/uploads
 
+# Ensure only mpm_prefork is enabled
+a2dismod mpm_event 2>/dev/null || true
+a2enmod mpm_prefork 2>/dev/null || true
+
 exec apache2-foreground
