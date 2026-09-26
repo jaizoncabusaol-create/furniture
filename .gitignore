@@ -1,0 +1,24 @@
+# Local credentials, accounts, and database exports
+config.php
+.env
+.env.*
+users.json
+*.sql
+!mix_match_migration.sql
+
+# Runtime backups, snapshots, logs, and sessions
+backups/
+.live_*/
+.live_*
+.workspace_*/
+.sessions/
+*.log
+.mysql_*
+.DS_Store
+
+# Publish catalog images, but keep customer uploads private
+uploads/*
+!uploads/.gitkeep
+!uploads/fur_clean_*.jpg
+!uploads/fur_clean_*.png
+!uploads/fur_clean_*.webp
