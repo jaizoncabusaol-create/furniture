@@ -544,6 +544,25 @@ function appMigrateJsonToDatabase(mysqli $db, string $storageFile): void
 
 function appEnsureBaseAccounts(mysqli $db): void
 {
+    if ((string) (appConfig()['app_env'] ?? '') === 'production') {
+        if ((int) appDbValue($db, "SELECT COUNT(*) FROM users WHERE role = 'admin'") > 0) {
+            return;
+        }
+
+        $email = trim((string) getenv('ADMIN_EMAIL'));
+        $password = (string) getenv('ADMIN_PASSWORD');
+        if (!filter_var($email, FILTER_VALIDATE_EMAIL) || strlen($password) < 12) {
+            throw new RuntimeException('Set ADMIN_EMAIL and an ADMIN_PASSWORD of at least 12 characters in production.');
+        }
+
+        appDbExecute(
+            $db,
+            'INSERT INTO users (name, email, password, role, phone, profile_image, address, notifications_enabled, google_auth, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            ['admin', $email, password_hash($password, PASSWORD_DEFAULT), 'admin', '', '', '', 1, 0, date('c')]
+        );
+        return;
+    }
+
     $accounts = [
         ['name' => 'admin', 'email' => 'admin@demo.local', 'password' => password_hash('123', PASSWORD_DEFAULT), 'role' => 'admin', 'google_auth' => 0],
         ['name' => 'user', 'email' => 'user@demo.local', 'password' => password_hash('123', PASSWORD_DEFAULT), 'role' => 'user', 'google_auth' => 0],

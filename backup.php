@@ -2,6 +2,10 @@
 
 function appBackupDirectory(): string
 {
+    $configured = trim((string) getenv('APP_BACKUP_DIR'));
+    if ($configured !== '') {
+        return $configured;
+    }
     return dirname(__DIR__, 3) . DIRECTORY_SEPARATOR . basename(__DIR__) . DIRECTORY_SEPARATOR . 'backups';
 }
 

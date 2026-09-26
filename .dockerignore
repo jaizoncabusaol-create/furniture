@@ -1,0 +1,11 @@
+*
+!Dockerfile
+!docker-entrypoint.sh
+!index.php
+!admin.php
+!user.php
+!db.php
+!backup.php
+!health.php
+!uploads/
+!uploads/fur_clean_*

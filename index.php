@@ -4,6 +4,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'db.php';
 
 $notice = '';
 $mysqli = appDb();
+$demoEnabled = (string) (appConfig()['app_env'] ?? '') !== 'production';
 $noticeType = 'info';
 $showRegisterModal = false;
 $loginIdentifier = '';
@@ -81,7 +82,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $registerEmail = '';
             }
         }
-    } elseif ($action === 'google_login') {
+    } elseif ($action === 'google_login' && $demoEnabled) {
         $matchedGoogleUser = null;
 
         foreach ($users as $user) {
@@ -127,7 +128,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($loginIdentifier === '' || $password === '') {
             $notice = 'Enter your username or email and password.';
             $noticeType = 'error';
-        } elseif ($loginIdentifier === $demoUser['name'] && $password === $demoUser['password']) {
+        } elseif ($demoEnabled && $loginIdentifier === $demoUser['name'] && $password === $demoUser['password']) {
             $_SESSION['user'] = [
                 'name' => $demoUser['name'],
                 'email' => $demoUser['email'],
@@ -547,6 +548,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <button class="submit-btn" type="submit">Login</button>
             </form>
 
+            <?php if ($demoEnabled): ?>
             <div class="divider">OR</div>
 
             <form class="google-form" method="post">
@@ -561,6 +563,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     Continue with Google
                 </button>
             </form>
+            <?php endif; ?>
 
             <p class="register">Don't have an account? <button type="button" id="openRegister">Register here</button></p>
         </section>

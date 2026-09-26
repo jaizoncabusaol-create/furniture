@@ -12,6 +12,6 @@ return [
     'db_pass' => 'your_cpanel_db_password',
     'db_charset' => 'utf8mb4',
 
-    // Keep this false on hosting when you already imported lumber123.sql.
+    // Keep false when the hosting database is already provisioned.
     'auto_create_database' => false,
 ];

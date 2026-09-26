@@ -12,6 +12,8 @@ backups/
 .live_*
 .workspace_*/
 .sessions/
+.railway/
+node_modules/
 *.log
 .mysql_*
 .DS_Store
