@@ -503,14 +503,29 @@ function appEnsureSchema(mysqli $db): void
         "ALTER TABLE mix_match_items ADD COLUMN layer_order INT NOT NULL DEFAULT 1 AFTER scale_value"
     );
 
-    $count = (int) appDbValue($db, 'SELECT COUNT(*) FROM users');
-    if ($count === 0) {
+    if (appStoreIsWiped($db)) {
         appMigrateJsonToDatabase($db, __DIR__ . DIRECTORY_SEPARATOR . 'users.json');
     }
 
     appEnsureBaseAccounts($db);
     appEnsureDefaultSettings($db);
     appEnsureCatalogProducts($db);
+}
+
+/**
+ * True only when every content table is empty, which means the database was
+ * wiped or never seeded. Partially empty databases are left alone so that
+ * the legacy users.json never resurrects stale orders or chats.
+ */
+function appStoreIsWiped(mysqli $db): bool
+{
+    foreach (['users', 'products', 'orders_store', 'messages', 'customization_requests'] as $table) {
+        if ((int) appDbValue($db, "SELECT COUNT(*) FROM {$table}") > 0) {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 function appMigrateJsonToDatabase(mysqli $db, string $storageFile): void
@@ -539,7 +554,128 @@ function appMigrateJsonToDatabase(mysqli $db, string $storageFile): void
         }
     }
 
-    appWriteStoreToDatabase($db, $store);
+    appMergeStoreIntoDatabase($db, $store);
+}
+
+/**
+ * Merge a store into the database without deleting rows that already exist.
+ * The legacy appWriteStoreToDatabase() call wiped every table first, so an empty
+ * users table used to erase the whole catalog, orders, chats, and requests.
+ */
+function appMergeStoreIntoDatabase(mysqli $db, array $store): void
+{
+    foreach (($store['users'] ?? []) as $user) {
+        $email = trim((string) ($user['email'] ?? ''));
+        if ($email === '' || (int) appDbValue($db, 'SELECT COUNT(*) FROM users WHERE email = ?', [$email]) > 0) {
+            continue;
+        }
+        appDbExecute(
+            $db,
+            'INSERT INTO users (name, email, password, role, phone, profile_image, address, notifications_enabled, google_auth, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [
+                (string) ($user['name'] ?? ''),
+                $email,
+                (string) ($user['password'] ?? ''),
+                (string) ($user['role'] ?? 'user'),
+                (string) ($user['phone'] ?? ''),
+                (string) ($user['profile_image'] ?? ''),
+                (string) ($user['address'] ?? ''),
+                !array_key_exists('notifications_enabled', $user) || !empty($user['notifications_enabled']) ? 1 : 0,
+                !empty($user['google_auth']) ? 1 : 0,
+                (string) ($user['created_at'] ?? ''),
+            ]
+        );
+    }
+
+    foreach (($store['products'] ?? []) as $product) {
+        $productId = trim((string) ($product['id'] ?? ''));
+        if ($productId === '' || (int) appDbValue($db, 'SELECT COUNT(*) FROM products WHERE id = ?', [$productId]) > 0) {
+            continue;
+        }
+        appDbExecute(
+            $db,
+            'INSERT INTO products (id, name, category, material, price, stock, description, image, updated_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [
+                $productId,
+                (string) ($product['name'] ?? ''),
+                (string) ($product['category'] ?? ''),
+                (string) ($product['material'] ?? ''),
+                (float) ($product['price'] ?? 0),
+                (int) ($product['stock'] ?? 0),
+                (string) ($product['description'] ?? ''),
+                (string) ($product['image'] ?? ''),
+                (string) ($product['updated_at'] ?? ''),
+                (string) ($product['created_at'] ?? ''),
+            ]
+        );
+    }
+
+    foreach (($store['orders'] ?? []) as $order) {
+        $orderId = trim((string) ($order['id'] ?? ''));
+        if ($orderId === '' || (int) appDbValue($db, 'SELECT COUNT(*) FROM orders_store WHERE id = ?', [$orderId]) > 0) {
+            continue;
+        }
+        appDbExecute(
+            $db,
+            'INSERT INTO orders_store (id, customer, customer_email, product_id, product_name, product_image, quantity, date_label, status, tone, total, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [
+                $orderId,
+                (string) ($order['customer'] ?? ''),
+                (string) ($order['customer_email'] ?? ''),
+                (string) ($order['product_id'] ?? ''),
+                (string) ($order['product_name'] ?? ''),
+                (string) ($order['product_image'] ?? ''),
+                (int) ($order['quantity'] ?? 1),
+                (string) ($order['date'] ?? ''),
+                (string) ($order['status'] ?? 'New Order'),
+                (string) ($order['tone'] ?? 'pending'),
+                (float) ($order['total'] ?? 0),
+                (string) ($order['created_at'] ?? ''),
+                (string) ($order['updated_at'] ?? ''),
+            ]
+        );
+    }
+
+    foreach (($store['messages'] ?? []) as $message) {
+        $messageId = trim((string) ($message['id'] ?? ''));
+        if ($messageId === '' || (int) appDbValue($db, 'SELECT COUNT(*) FROM messages WHERE id = ?', [$messageId]) > 0) {
+            continue;
+        }
+        appDbExecute(
+            $db,
+            'INSERT INTO messages (id, from_name, from_email, recipient, product_id, message, image_path, created_at, read_by_admin, read_by_user, deleted_by_admin, deleted_by_user) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [
+                $messageId,
+                (string) ($message['from_name'] ?? ''),
+                (string) ($message['from_email'] ?? ''),
+                (string) ($message['to'] ?? 'admin'),
+                (string) ($message['product_id'] ?? ''),
+                (string) ($message['message'] ?? ''),
+                (string) ($message['image_path'] ?? ''),
+                (string) ($message['created_at'] ?? ''),
+                (int) ($message['read_by_admin'] ?? 1),
+                (int) ($message['read_by_user'] ?? 1),
+                (int) ($message['deleted_by_admin'] ?? 0),
+                (int) ($message['deleted_by_user'] ?? 0),
+            ]
+        );
+    }
+
+    foreach ((($store['settings'] ?? [])['categories'] ?? []) as $category) {
+        $name = trim((string) ($category['name'] ?? ''));
+        if ($name === '' || (int) appDbValue($db, 'SELECT COUNT(*) FROM settings_categories WHERE name = ?', [$name]) > 0) {
+            continue;
+        }
+        appDbExecute($db, 'INSERT INTO settings_categories (name, icon) VALUES (?, ?)', [$name, (string) ($category['icon'] ?? '')]);
+    }
+
+    foreach ((($store['settings'] ?? [])['materials'] ?? []) as $material) {
+        $name = trim((string) $material);
+        if ($name === '' || (int) appDbValue($db, 'SELECT COUNT(*) FROM settings_materials WHERE name = ?', [$name]) > 0) {
+            continue;
+        }
+        appDbExecute($db, 'INSERT INTO settings_materials (name) VALUES (?)', [$name]);
+    }
 }
 
 function appEnsureBaseAccounts(mysqli $db): void
@@ -611,11 +747,15 @@ function appEnsureBaseAccounts(mysqli $db): void
 
 function appEnsureDefaultSettings(mysqli $db): void
 {
-    if ((string) appDbValue($db, "SELECT option_value FROM settings_options WHERE option_name = 'defaults_seeded'") === '1') {
+    $categoriesSeeded = (int) appDbValue($db, 'SELECT COUNT(*) FROM settings_categories') > 0;
+    $materialsSeeded = (int) appDbValue($db, 'SELECT COUNT(*) FROM settings_materials') > 0;
+
+    if ($categoriesSeeded && $materialsSeeded
+        && (string) appDbValue($db, "SELECT option_value FROM settings_options WHERE option_name = 'defaults_seeded'") === '1') {
         return;
     }
 
-    if ((int) appDbValue($db, 'SELECT COUNT(*) FROM settings_categories') === 0) {
+    if (!$categoriesSeeded) {
         foreach (appDefaultStore()['settings']['categories'] as $category) {
             appDbExecute($db, 'INSERT INTO settings_categories (name, icon) VALUES (?, ?)', [
                 (string) ($category['name'] ?? ''),
@@ -624,7 +764,7 @@ function appEnsureDefaultSettings(mysqli $db): void
         }
     }
 
-    if ((int) appDbValue($db, 'SELECT COUNT(*) FROM settings_materials') === 0) {
+    if (!$materialsSeeded) {
         foreach (appDefaultStore()['settings']['materials'] as $material) {
             appDbExecute($db, 'INSERT INTO settings_materials (name) VALUES (?)', [(string) $material]);
         }
@@ -637,12 +777,18 @@ function appEnsureCatalogProducts(mysqli $db): void
 {
     $catalogSeeded = (string) appDbValue($db, "SELECT option_value FROM settings_options WHERE option_name = 'catalog_seeded'") === '1';
     $catalogSeedVersion = (int) appDbValue($db, "SELECT option_value FROM settings_options WHERE option_name = 'catalog_seed_version'");
-    if ($catalogSeeded && $catalogSeedVersion >= 2) {
+    $hasProducts = (int) appDbValue($db, 'SELECT COUNT(*) FROM products') > 0;
+
+    if ($catalogSeeded && $catalogSeedVersion >= 2 && $hasProducts) {
         return;
     }
 
-    appDbExecute($db, "DELETE FROM products WHERE id LIKE 'prd_catalog_%' OR image LIKE 'uploads/catalog_%'");
-    appDbExecute($db, "UPDATE products SET category = 'Bed', material = 'Solid Wood' WHERE id = 'prd_6a37be6c657f09.69652152'");
+    if ($hasProducts) {
+        appDbExecute($db, "DELETE FROM products WHERE id LIKE 'prd_catalog_%' OR image LIKE 'uploads/catalog_%'");
+        appDbExecute($db, "UPDATE products SET category = 'Bed', material = 'Solid Wood' WHERE id = 'prd_6a37be6c657f09.69652152'");
+    } else {
+        appDbExecute($db, "DELETE FROM products WHERE id LIKE 'prd_catalog_%' OR image LIKE 'uploads/catalog_%'");
+    }
 
     $imageFiles = [];
     foreach (['jpg', 'jpeg', 'png', 'webp'] as $extension) {
@@ -652,6 +798,13 @@ function appEnsureCatalogProducts(mysqli $db): void
         );
     }
     sort($imageFiles, SORT_NATURAL | SORT_FLAG_CASE);
+
+    if ($imageFiles === []) {
+        throw new RuntimeException(
+            'Catalog images are missing. Upload the uploads/fur_clean_* image files to the app folder, '
+            . 'then reload this page to rebuild the product catalog.'
+        );
+    }
 
     foreach ($imageFiles as $imageFile) {
         $filename = basename($imageFile);
@@ -938,6 +1091,18 @@ function appWriteStoreToDatabase(mysqli $db, array $data): void
 {
     $catalogSeeded = (string) appDbValue($db, "SELECT option_value FROM settings_options WHERE option_name = 'catalog_seeded'") === '1';
     $schemaVersion = (string) appDbValue($db, "SELECT option_value FROM settings_options WHERE option_name = 'schema_version'");
+
+    $preservedOptions = [];
+    foreach (appDbFetchAll($db, 'SELECT option_name, option_value FROM settings_options') as $option) {
+        $optionName = (string) ($option['option_name'] ?? '');
+        if ($optionName === '' || $optionName === 'defaults_seeded' || $optionName === 'catalog_seeded'
+            || $optionName === 'catalog_seed_version' || $optionName === 'schema_version'
+            || str_starts_with($optionName, 'slider_')) {
+            continue;
+        }
+        $preservedOptions[$optionName] = (string) ($option['option_value'] ?? '');
+    }
+
     $db->begin_transaction();
 
     try {
@@ -1141,6 +1306,13 @@ function appWriteStoreToDatabase(mysqli $db, array $data): void
         }
         if ($schemaVersion !== '') {
             appDbExecute($db, 'INSERT INTO settings_options (option_name, option_value) VALUES (?, ?)', ['schema_version', $schemaVersion]);
+        }
+        foreach ($preservedOptions as $optionName => $optionValue) {
+            appDbExecute(
+                $db,
+                'INSERT INTO settings_options (option_name, option_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE option_value = VALUES(option_value)',
+                [$optionName, $optionValue]
+            );
         }
 
         $db->commit();
