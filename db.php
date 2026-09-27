@@ -276,9 +276,9 @@ function appDb(): mysqli
             throw $error;
         }
     }
-    if ($schemaVersion !== '2026-09-26-1') {
+    if ($schemaVersion !== '2026-09-27-1') {
         appEnsureSchema($db);
-        $db->query("INSERT INTO settings_options (option_name, option_value) VALUES ('schema_version', '2026-09-26-1') ON DUPLICATE KEY UPDATE option_value = VALUES(option_value)");
+        $db->query("INSERT INTO settings_options (option_name, option_value) VALUES ('schema_version', '2026-09-27-1') ON DUPLICATE KEY UPDATE option_value = VALUES(option_value)");
     }
 
     return $db;
