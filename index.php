@@ -119,12 +119,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $matchedUser = null;
 
         foreach ($users as $user) {
-            if (
-                strcasecmp((string) ($user['email'] ?? ''), $loginIdentifier) === 0
-                || strcasecmp((string) ($user['name'] ?? ''), $loginIdentifier) === 0
-            ) {
+            if (strcasecmp((string) ($user['email'] ?? ''), $loginIdentifier) === 0) {
                 $matchedUser = $user;
                 break;
+            }
+        }
+
+        if ($matchedUser === null) {
+            foreach ($users as $user) {
+                if (strcasecmp((string) ($user['name'] ?? ''), $loginIdentifier) === 0
+                    && password_verify($password, (string) ($user['password'] ?? ''))) {
+                    $matchedUser = $user;
+                    break;
+                }
             }
         }
 

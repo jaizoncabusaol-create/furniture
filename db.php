@@ -559,17 +559,23 @@ function appEnsureBaseAccounts(mysqli $db): void
             );
         }
 
-        $defaultUserExists = (int) appDbValue(
-            $db,
-            'SELECT COUNT(*) FROM users WHERE LOWER(name) = ? OR LOWER(email) = ?',
-            ['user', 'user@demo.local']
-        ) > 0;
-        if (!$defaultUserExists) {
+        $defaultUsers = appDbFetchAll($db, 'SELECT password, role FROM users WHERE LOWER(email) = ?', ['user@demo.local']);
+        if ($defaultUsers === []) {
             appDbExecute(
                 $db,
                 'INSERT INTO users (name, email, password, role, phone, profile_image, address, notifications_enabled, google_auth, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
                 ['user', 'user@demo.local', password_hash('123', PASSWORD_DEFAULT), 'user', '', '', '', 1, 0, date('c')]
             );
+        }
+
+        // Repair the existing demo account once; later password changes remain intact.
+        if ((string) appDbValue($db, "SELECT option_value FROM settings_options WHERE option_name = 'default_user_password_version'") !== '1') {
+            if ($defaultUsers !== [] && ($defaultUsers[0]['role'] ?? '') === 'user'
+                && !password_verify('123', (string) ($defaultUsers[0]['password'] ?? ''))) {
+                appDbExecute($db, 'UPDATE users SET password = ? WHERE LOWER(email) = ? AND role = ?',
+                    [password_hash('123', PASSWORD_DEFAULT), 'user@demo.local', 'user']);
+            }
+            appDbExecute($db, "INSERT INTO settings_options (option_name, option_value) VALUES ('default_user_password_version', '1') ON DUPLICATE KEY UPDATE option_value = '1'");
         }
 
         return;
