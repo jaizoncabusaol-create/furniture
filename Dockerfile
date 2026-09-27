@@ -18,7 +18,7 @@ RUN printf '%s\n' \
 
 COPY index.php admin.php user.php db.php backup.php health.php session.php /var/www/html/
 COPY uploads/fur_clean_* /opt/catalog/
-COPY uploads/prd_img_6a37be6c615c66.30627217.jpg /opt/catalog/
+COPY uploads/prd_img_* /opt/catalog/
 COPY docker-entrypoint.sh /usr/local/bin/furniquest-start
 
 RUN chmod +x /usr/local/bin/furniquest-start

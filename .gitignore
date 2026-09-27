@@ -24,4 +24,7 @@ uploads/*
 !uploads/fur_clean_*.jpg
 !uploads/fur_clean_*.png
 !uploads/fur_clean_*.webp
-!uploads/prd_img_6a37be6c615c66.30627217.jpg
+!uploads/prd_img_*.jpg
+!uploads/prd_img_*.png
+!uploads/prd_img_*.webp
+!uploads/prd_img_*.gif
