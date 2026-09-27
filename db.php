@@ -629,18 +629,27 @@ function appEnsureDefaultSettings(mysqli $db): void
 
 function appEnsureCatalogProducts(mysqli $db): void
 {
-    if ((string) appDbValue($db, "SELECT option_value FROM settings_options WHERE option_name = 'catalog_seeded'") === '1') {
+    $catalogSeeded = (string) appDbValue($db, "SELECT option_value FROM settings_options WHERE option_name = 'catalog_seeded'") === '1';
+    $catalogSeedVersion = (int) appDbValue($db, "SELECT option_value FROM settings_options WHERE option_name = 'catalog_seed_version'");
+    if ($catalogSeeded && $catalogSeedVersion >= 2) {
         return;
     }
 
     appDbExecute($db, "DELETE FROM products WHERE id LIKE 'prd_catalog_%' OR image LIKE 'uploads/catalog_%'");
     appDbExecute($db, "UPDATE products SET category = 'Bed', material = 'Solid Wood' WHERE id = 'prd_6a37be6c657f09.69652152'");
 
-    $imageFiles = glob(__DIR__ . DIRECTORY_SEPARATOR . 'uploads' . DIRECTORY_SEPARATOR . 'fur_clean_*.jpg') ?: [];
+    $imageFiles = [];
+    foreach (['jpg', 'jpeg', 'png', 'webp'] as $extension) {
+        $imageFiles = array_merge(
+            $imageFiles,
+            glob(__DIR__ . DIRECTORY_SEPARATOR . 'uploads' . DIRECTORY_SEPARATOR . 'fur_clean_*.' . $extension) ?: []
+        );
+    }
     sort($imageFiles, SORT_NATURAL | SORT_FLAG_CASE);
 
     foreach ($imageFiles as $imageFile) {
-        $slug = preg_replace('/^fur_clean_|\.jpg$/', '', basename($imageFile));
+        $filename = basename($imageFile);
+        $slug = preg_replace('/^fur_clean_/', '', pathinfo($filename, PATHINFO_FILENAME));
         $product = appCleanImageProduct((string) $slug);
 
         appDbExecute(
@@ -654,7 +663,7 @@ function appEnsureCatalogProducts(mysqli $db): void
                 $product['price'],
                 $product['stock'],
                 $product['description'],
-                'uploads/fur_clean_' . $slug . '.jpg',
+                'uploads/' . $filename,
                 date('c'),
                 date('c'),
             ]
@@ -670,16 +679,12 @@ function appEnsureCatalogProducts(mysqli $db): void
            AND p1.id > p2.id"
     );
     appDbExecute($db, "INSERT INTO settings_options (option_name, option_value) VALUES ('catalog_seeded', '1') ON DUPLICATE KEY UPDATE option_value = '1'");
+    appDbExecute($db, "INSERT INTO settings_options (option_name, option_value) VALUES ('catalog_seed_version', '2') ON DUPLICATE KEY UPDATE option_value = '2'");
 }
 
 function appCatalogProductIsVisible(array $product): bool
 {
-    return !in_array((string) ($product['id'] ?? ''), [
-        'prd_clean_simple-bed-green-cover',
-        'prd_clean_simple-bed-outdoor-b',
-        'prd_clean_carved-daybed-indoor',
-        'prd_clean_carved-sala-set-a',
-    ], true);
+    return trim((string) ($product['image'] ?? '')) !== '' || trim((string) ($product['name'] ?? '')) !== '';
 }
 
 function appCleanImageProduct(string $slug): array

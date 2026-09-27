@@ -11,10 +11,6 @@ RUN apt-get update \
 
 RUN printf '%s\n' \
     'expose_php=Off' \
-    'session.cookie_httponly=1' \
-    'session.cookie_secure=1' \
-    'session.cookie_samesite=Lax' \
-    'session.use_strict_mode=1' \
     'upload_max_filesize=100M' \
     'post_max_size=105M' \
     'memory_limit=256M' \
@@ -26,6 +22,6 @@ COPY docker-entrypoint.sh /usr/local/bin/furniquest-start
 
 RUN chmod +x /usr/local/bin/furniquest-start
 
-ENV APP_ENV=production AUTO_CREATE_DATABASE=false APP_BACKUP_DIR=/data/backups
+ENV APP_ENV=production AUTO_CREATE_DATABASE=false APP_BACKUP_DIR=/data/backups APP_SESSION_DIR=/data/sessions
 EXPOSE 8080
 CMD ["/usr/local/bin/furniquest-start"]

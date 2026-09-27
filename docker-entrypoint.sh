@@ -9,10 +9,11 @@ esac
 printf 'Listen %s\n' "$port" > /etc/apache2/ports.conf
 sed -i "s/<VirtualHost \*:80>/<VirtualHost *:$port>/" /etc/apache2/sites-available/000-default.conf
 
-mkdir -p /data/uploads /data/backups
+mkdir -p /data/uploads /data/backups /data/sessions
 cp -Rn /opt/catalog/. /data/uploads/
 chown -R www-data:www-data /data
 chmod 700 /data/backups
+chmod 700 /data/sessions
 ln -sfn /data/uploads /var/www/html/uploads
 
 # Ensure only mpm_prefork is enabled

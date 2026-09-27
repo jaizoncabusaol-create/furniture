@@ -5355,7 +5355,7 @@ $canPlaceOrder = userHasCompleteOrderProfile($currentUserRecord);
                 white-space: normal;
             }
         }
-        @media (min-width: 0) {
+        @media (max-width: 767px) {
             body {
                 background: #fff;
             }

@@ -2974,7 +2974,7 @@ $showProductForm = $showAddProductForm || $editingProduct['id'] !== '';
                 white-space: normal;
             }
         }
-        @media (min-width: 0) {
+        @media (max-width: 767px) {
             body {
                 background: #fff;
             }
