@@ -12,6 +12,7 @@ sed -i "s/<VirtualHost \*:80>/<VirtualHost *:$port>/" /etc/apache2/sites-availab
 mkdir -p /data/uploads /data/backups /data/sessions
 cp -Rn /opt/catalog/. /data/uploads/
 chown -R www-data:www-data /data
+find /data/uploads -maxdepth 1 -type f -name 'prd_img_*' -exec chmod 0644 {} +
 chmod 700 /data/backups
 chmod 700 /data/sessions
 ln -sfn /data/uploads /var/www/html/uploads
