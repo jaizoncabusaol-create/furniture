@@ -5432,11 +5432,11 @@ $canPlaceOrder = userHasCompleteOrderProfile($currentUserRecord);
             }
             .app,
             .app.mix-app {
-                width: min(100%, 430px);
-                max-width: 430px;
+                width: 100%;
+                max-width: none;
                 height: 100dvh;
                 min-height: 100vh;
-                margin: 0 auto;
+                margin: 0;
                 display: flex;
                 flex-direction: column;
             }
@@ -5491,13 +5491,13 @@ $canPlaceOrder = userHasCompleteOrderProfile($currentUserRecord);
                 padding: 6px 7px;
             }
             .bottom-nav {
-                left: 50%;
-                right: auto;
+                left: 0;
+                right: 0;
                 top: auto;
                 bottom: 0;
-                transform: translateX(-50%);
-                width: min(100%, 430px);
-                max-width: 430px;
+                transform: none;
+                width: 100%;
+                max-width: none;
                 display: grid;
                 grid-template-columns: repeat(5, minmax(0, 1fr));
                 align-content: normal;
@@ -5506,7 +5506,7 @@ $canPlaceOrder = userHasCompleteOrderProfile($currentUserRecord);
                 border-radius: 0;
             }
             .nav-toggle-input:checked ~ .bottom-nav {
-                transform: translateX(-50%);
+                transform: none;
             }
             .nav-item {
                 display: grid;

@@ -211,7 +211,7 @@ html.coarse-touch textarea {
 }
 
 html.touch-desktop-site {
-    font-size: clamp(20px, 2.6vw, 28px);
+    font-size: clamp(16px, 1.8vw, 20px);
 }
 
 html.touch-desktop-site .app,
@@ -225,11 +225,15 @@ html.touch-desktop-site .content {
     padding-inline: clamp(18px, 4vw, 40px);
 }
 
+html.touch-desktop-site .app {
+    min-height: 100dvh;
+}
+
 html.touch-desktop-site .products-grid,
 html.touch-desktop-site .categories-grid,
 html.touch-desktop-site .stats-grid,
 html.touch-desktop-site .two-col {
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr));
 }
 
 html.touch-desktop-site button,
