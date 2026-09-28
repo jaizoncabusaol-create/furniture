@@ -1,5 +1,87 @@
 <?php
 
+function appRemoveDuplicateProducts(mysqli $db): int
+{
+    $removedCount = 0;
+    $products = appDbFetchAll($db, 'SELECT id, name FROM products ORDER BY name ASC, created_at ASC');
+    $seenNames = [];
+    $idsToDelete = [];
+
+    foreach ($products as $product) {
+        $normalizedName = strtolower(trim(preg_replace('/\s+/', ' ', (string) ($product['name'] ?? ''))));
+        if ($normalizedName === '') {
+            continue;
+        }
+        if (isset($seenNames[$normalizedName])) {
+            $idsToDelete[] = $product['id'];
+        } else {
+            $seenNames[$normalizedName] = $product['id'];
+        }
+    }
+
+    if ($idsToDelete !== []) {
+        $placeholders = implode(',', array_fill(0, count($idsToDelete), '?'));
+        appDbExecute($db, "DELETE FROM products WHERE id IN ($placeholders)", $idsToDelete);
+        $removedCount = count($idsToDelete);
+    }
+
+    return $removedCount;
+}
+
+function appRemoveDuplicateProductsByNameAndImage(mysqli $db): int
+{
+    $removedCount = 0;
+    $products = appDbFetchAll($db, 'SELECT id, name, image, created_at FROM products ORDER BY created_at ASC');
+    $seenNames = [];
+    $seenImages = [];
+    $idsToDelete = [];
+
+    foreach ($products as $product) {
+        $normalizedName = strtolower(trim(preg_replace('/\s+/', ' ', (string) ($product['name'] ?? ''))));
+        $image = trim((string) ($product['image'] ?? ''));
+
+        if ($normalizedName === '' && ($image === '' || str_starts_with($image, 'http'))) {
+            continue;
+        }
+
+        $isDuplicate = false;
+
+        if ($normalizedName !== '') {
+            if (isset($seenNames[$normalizedName])) {
+                $isDuplicate = true;
+            } else {
+                $seenNames[$normalizedName] = $product['id'];
+            }
+        }
+
+        if (!$isDuplicate && $image !== '' && !str_starts_with($image, 'http')) {
+            $filePath = __DIR__ . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $image);
+            if (is_file($filePath)) {
+                $hash = hash_file('sha256', $filePath);
+                if ($hash !== false) {
+                    if (isset($seenImages[$hash])) {
+                        $isDuplicate = true;
+                    } else {
+                        $seenImages[$hash] = $product['id'];
+                    }
+                }
+            }
+        }
+
+        if ($isDuplicate) {
+            $idsToDelete[] = $product['id'];
+        }
+    }
+
+    if ($idsToDelete !== []) {
+        $placeholders = implode(',', array_fill(0, count($idsToDelete), '?'));
+        appDbExecute($db, "DELETE FROM products WHERE id IN ($placeholders)", $idsToDelete);
+        $removedCount = count($idsToDelete);
+    }
+
+    return $removedCount;
+}
+
 function appCreateMessageRecord(
     string $fromName,
     string $fromEmail,
@@ -779,7 +861,7 @@ function appEnsureCatalogProducts(mysqli $db): void
     $catalogSeedVersion = (int) appDbValue($db, "SELECT option_value FROM settings_options WHERE option_name = 'catalog_seed_version'");
     $hasProducts = (int) appDbValue($db, 'SELECT COUNT(*) FROM products') > 0;
 
-    if ($catalogSeeded && $catalogSeedVersion >= 2 && $hasProducts) {
+    if ($catalogSeeded && $catalogSeedVersion >= 3 && $hasProducts) {
         return;
     }
 
@@ -806,9 +888,17 @@ function appEnsureCatalogProducts(mysqli $db): void
         );
     }
 
+    $seenImageHashes = [];
     foreach ($imageFiles as $imageFile) {
         $filename = basename($imageFile);
         $slug = preg_replace('/^fur_clean_/', '', pathinfo($filename, PATHINFO_FILENAME));
+        $imageHash = hash_file('sha256', $imageFile);
+        if ($imageHash !== false && isset($seenImageHashes[$imageHash])) {
+            continue;
+        }
+        if ($imageHash !== false) {
+            $seenImageHashes[$imageHash] = $filename;
+        }
         $product = appCleanImageProduct((string) $slug);
 
         appDbExecute(
@@ -838,7 +928,7 @@ function appEnsureCatalogProducts(mysqli $db): void
            AND p1.id > p2.id"
     );
     appDbExecute($db, "INSERT INTO settings_options (option_name, option_value) VALUES ('catalog_seeded', '1') ON DUPLICATE KEY UPDATE option_value = '1'");
-    appDbExecute($db, "INSERT INTO settings_options (option_name, option_value) VALUES ('catalog_seed_version', '2') ON DUPLICATE KEY UPDATE option_value = '2'");
+    appDbExecute($db, "INSERT INTO settings_options (option_name, option_value) VALUES ('catalog_seed_version', '3') ON DUPLICATE KEY UPDATE option_value = '3'");
 }
 
 function appCatalogProductIsVisible(array $product): bool
@@ -853,7 +943,7 @@ function appCleanImageProduct(string $slug): array
     $price = 6500.00;
     $stock = 5;
 
-    if (preg_match('/(^|-)door($|-)/', $slug)) {
+    if (preg_match('/(^|-)doors?($|-)/', $slug)) {
         $category = 'Door';
         $type = str_contains($slug, 'carved') || str_contains($slug, 'floral') || str_contains($slug, 'ornate')
             ? 'Carved Wooden Door'
@@ -968,7 +1058,7 @@ function appCleanImageProductSize(string $slug, string $category): string
 function appDisplayNameFromSlug(string $slug, string $fallback): string
 {
     $words = array_values(array_filter(explode('-', $slug), function ($word) {
-        return !in_array($word, ['a', 'b', 'clean', 'room', 'workshop', 'outdoor', 'indoor', 'photo', 'installed', 'loading', 'closeup', 'truck', 'top', 'side'], true);
+        return $word !== 'clean';
     }));
 
     if ($words === []) {

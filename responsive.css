@@ -1,0 +1,269 @@
+/* Shared responsive safeguards for browsers, WebViews, and touch desktop mode. */
+:root {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+}
+
+html,
+body {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    overflow-x: clip;
+}
+
+*,
+*::before,
+*::after {
+    min-width: 0;
+}
+
+img,
+picture,
+video,
+canvas,
+svg {
+    max-width: 100%;
+}
+
+img,
+video {
+    height: auto;
+}
+
+button,
+input,
+select,
+textarea {
+    max-width: 100%;
+    font: inherit;
+}
+
+input[type="file"] {
+    width: 100%;
+}
+
+p,
+h1,
+h2,
+h3,
+h4,
+label,
+legend,
+a,
+button,
+td,
+th {
+    overflow-wrap: anywhere;
+}
+
+.app,
+.shell,
+.login-shell,
+.content,
+.panel,
+.card,
+.login-card,
+.modal,
+.profile-modal-card,
+.settings-popup,
+.action-sheet {
+    max-width: 100%;
+}
+
+.modal-backdrop,
+.modal-overlay,
+.mini-popup-overlay,
+.restore-done-overlay {
+    overscroll-behavior: contain;
+}
+
+dialog,
+.modal,
+.profile-modal-card,
+.settings-popup,
+.action-sheet,
+.message-send-preview-card {
+    max-width: min(calc(100vw - 24px), 720px);
+    max-height: calc(100dvh - 24px);
+    overflow-y: auto;
+}
+
+.backup-table-wrap,
+.table-wrap {
+    max-width: 100%;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    -webkit-overflow-scrolling: touch;
+}
+
+table {
+    max-width: 100%;
+}
+
+@media (max-width: 767px) {
+    body {
+        font-size: max(1rem, 16px);
+    }
+
+    input,
+    select,
+    textarea {
+        font-size: 16px;
+    }
+
+    button,
+    [role="button"],
+    .btn,
+    .primary-btn,
+    .mini-btn,
+    .message-btn,
+    .product-view-btn,
+    .submit-btn,
+    .register-submit,
+    .google-btn {
+        min-height: 44px;
+    }
+
+    .section-title,
+    .section-head,
+    .topbar-head,
+    .brand-row,
+    .order-top,
+    .detail-actions,
+    .actions,
+    .admin-profile-actions {
+        flex-wrap: wrap;
+    }
+
+    .form-grid,
+    .filter-popup-grid,
+    .detail-grid,
+    .customization-detail-grid,
+    .client-info-grid,
+    .admin-profile-info {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .field,
+    .field input,
+    .field select,
+    .field textarea,
+    .actions > *,
+    .detail-actions > * {
+        max-width: 100%;
+    }
+
+    .modal-backdrop,
+    .modal-overlay,
+    .mini-popup-overlay,
+    .restore-done-overlay {
+        padding: max(10px, env(safe-area-inset-top)) 10px max(10px, env(safe-area-inset-bottom));
+    }
+}
+
+@media (max-width: 359px) {
+    .stats-grid,
+    .products-grid,
+    .categories-grid,
+    .two-col,
+    .customization-grid,
+    .customization-media,
+    .mix-selected-item {
+        grid-template-columns: minmax(0, 1fr) !important;
+    }
+
+    .actions,
+    .detail-actions,
+    .order-form,
+    .chat-composer-actions,
+    .message-send-preview-actions {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        width: 100%;
+    }
+
+    .actions > *,
+    .detail-actions > *,
+    .order-form > *,
+    .chat-composer-actions > *,
+    .message-send-preview-actions > * {
+        width: 100%;
+    }
+}
+
+/* A phone can expose a laptop-sized CSS viewport in "Desktop site" mode. */
+html.coarse-touch button,
+html.coarse-touch [role="button"],
+html.coarse-touch input,
+html.coarse-touch select,
+html.coarse-touch textarea,
+html.coarse-touch .btn,
+html.coarse-touch .nav-item,
+html.coarse-touch .bottom-nav a {
+    min-height: 44px;
+}
+
+html.coarse-touch input,
+html.coarse-touch select,
+html.coarse-touch textarea {
+    font-size: max(16px, 1rem);
+}
+
+html.touch-desktop-site {
+    font-size: clamp(20px, 2.6vw, 28px);
+}
+
+html.touch-desktop-site .app,
+html.touch-desktop-site .shell,
+html.touch-desktop-site .login-shell {
+    width: 100%;
+    max-width: 100%;
+}
+
+html.touch-desktop-site .content {
+    padding-inline: clamp(18px, 4vw, 40px);
+}
+
+html.touch-desktop-site .products-grid,
+html.touch-desktop-site .categories-grid,
+html.touch-desktop-site .stats-grid,
+html.touch-desktop-site .two-col {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+}
+
+html.touch-desktop-site button,
+html.touch-desktop-site [role="button"],
+html.touch-desktop-site input,
+html.touch-desktop-site select,
+html.touch-desktop-site textarea,
+html.touch-desktop-site .btn,
+html.touch-desktop-site .nav-item,
+html.touch-desktop-site .bottom-nav a {
+    min-height: 52px;
+}
+
+html.touch-desktop-site .modal,
+html.touch-desktop-site .profile-modal-card,
+html.touch-desktop-site .settings-popup,
+html.touch-desktop-site .action-sheet {
+    width: min(calc(100vw - 48px), 760px);
+}
+
+@media (orientation: landscape) and (max-height: 540px) {
+    dialog,
+    .modal,
+    .profile-modal-card,
+    .settings-popup,
+    .action-sheet,
+    .message-send-preview-card {
+        max-height: calc(100dvh - 12px);
+    }
+
+    .modal-backdrop,
+    .modal-overlay,
+    .mini-popup-overlay {
+        align-items: flex-start;
+        padding-block: 6px;
+    }
+}

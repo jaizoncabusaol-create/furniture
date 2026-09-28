@@ -178,8 +178,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Furniture System Login</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+    <title>RN Furniture Login</title>
     <style>
         :root {
             --text: #1f2937;
@@ -529,6 +529,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
     </style>
+    <link rel="stylesheet" href="responsive.css">
+    <script src="responsive.js" defer></script>
 </head>
 <body>
     <main class="login-shell">
@@ -539,7 +541,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <path d="M20 19a4 4 0 0 1 4-4h16a4 4 0 0 1 4 4v4H20v-4Z" fill="currentColor" opacity=".9"/>
                     <path d="M18 42h4v7h-4zm24 0h4v7h-4zm10-18h5l-3-10h-8l-2 10h8Z" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/>
                 </svg>
-                <h1>Furniture System</h1>
+                <h1>RN Furniture</h1>
                 <p>Personalized Furniture Creation and Order Tracking System</p>
             </header>
 

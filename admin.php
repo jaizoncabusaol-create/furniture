@@ -450,28 +450,6 @@ function normalizeSliderSettings(array $settings): array
     ];
 }
 
-if (isset($_GET['download_saved_backup'])) {
-    $backupName = (string) $_GET['download_saved_backup'];
-    $backupPath = appBackupPath($backupName);
-    if ($backupPath === null) {
-        http_response_code(404);
-        exit('Backup file not found.');
-    }
-    $backupStream = fopen($backupPath, 'rb');
-    if ($backupStream === false) {
-        http_response_code(500);
-        exit('Backup file could not be opened.');
-    }
-    while (ob_get_level() > 0) ob_end_clean();
-    header('Content-Type: application/octet-stream');
-    header('Content-Disposition: attachment; filename="' . $backupName . '"');
-    header('Content-Length: ' . filesize($backupPath));
-    header('Cache-Control: no-store');
-    header('X-Content-Type-Options: nosniff');
-    fpassthru($backupStream);
-    fclose($backupStream);
-    exit;
-}
 $store = appLoadStore();
 if (($_GET['download_backup'] ?? '') === '1') {
     $backupJson = json_encode($store, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE);
@@ -601,9 +579,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $message = appDisplayChatMessage(trim((string) ($_POST['message'] ?? '')));
         $customizationMessageId = trim((string) ($_POST['customization_id'] ?? ''));
         $customizationRecipientValid = true;
+        $customerHasMessaged = false;
         if ($customizationMessageId !== '') {
             [$messageRequest] = findCustomizationRequestById($store['customization_requests'] ?? [], $customizationMessageId);
             $customizationRecipientValid = $messageRequest !== null && strcasecmp((string) ($messageRequest['customer_email'] ?? ''), $recipientEmail) === 0;
+            if ($customizationRecipientValid) {
+                foreach (($store['messages'] ?? []) as $message) {
+                    $msgCustomizationId = appMessageCustomizationId($message);
+                    $msgFromEmail = strtolower((string) ($message['from_email'] ?? ''));
+                    $msgTo = strtolower((string) ($message['to'] ?? ''));
+                    $customerEmail = strtolower($recipientEmail);
+                    if ($msgCustomizationId === $customizationMessageId
+                        && $msgFromEmail === $customerEmail
+                        && $msgTo === 'admin'
+                        && appDisplayChatMessage((string) ($message['message'] ?? '')) !== '') {
+                        $customerHasMessaged = true;
+                        break;
+                    }
+                }
+            }
         }
         $chatImageUpload = ['path' => null, 'error' => ''];
         if (filter_var($recipientEmail, FILTER_VALIDATE_EMAIL)) {
@@ -613,6 +607,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if ($recipientEmail === '' || !filter_var($recipientEmail, FILTER_VALIDATE_EMAIL) || !$customizationRecipientValid) {
             $notice = 'Select a valid user conversation first.';
+            $noticeType = 'error';
+        } elseif ($customizationMessageId !== '' && !$customerHasMessaged) {
+            $notice = 'Customer must send a message first before you can reply.';
             $noticeType = 'error';
         } elseif (($chatImageUpload['error'] ?? '') !== '') {
             $notice = (string) $chatImageUpload['error'];
@@ -634,7 +631,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $reply['image_path'] = $chatImagePath;
             array_unshift($store['messages'], $reply);
             appSaveStore($store);
-            header('Location: ' . ($customizationMessageId !== '' ? 'admin.php?section=customizations&customization=' . urlencode($customizationMessageId) : 'admin.php?section=messages&chat=' . urlencode($recipientEmail)));
+            header('Location: ' . ($customizationMessageId !== '' ? 'admin.php?section=customizations&customization=' . urlencode($customizationMessageId) . '&messages=1' : 'admin.php?section=messages&chat=' . urlencode($recipientEmail)));
             exit;
         }
     }
@@ -664,6 +661,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             appSaveStore($store);
             header('Location: admin.php?section=messages');
             exit;
+        }
+    }
+
+    if ($action === 'delete_message') {
+        $messageId = trim($_POST['message_id'] ?? '');
+        $threadEmail = trim($_POST['thread_email'] ?? '');
+
+        if ($messageId === '') {
+            $notice = 'Select a valid message first.';
+            $noticeType = 'error';
+        } elseif ($threadEmail === '' || !filter_var($threadEmail, FILTER_VALIDATE_EMAIL)) {
+            $notice = 'Select a valid chat thread first.';
+            $noticeType = 'error';
+        } else {
+            $deleted = false;
+            foreach (($store['messages'] ?? []) as $index => $message) {
+                if (($message['id'] ?? '') === $messageId) {
+                    $store['messages'][$index]['deleted_by_admin'] = 1;
+                    $deleted = true;
+                    break;
+                }
+            }
+            if ($deleted) {
+                appSaveStore($store);
+                header('Location: admin.php?section=messages&chat=' . urlencode($threadEmail));
+                exit;
+            } else {
+                $notice = 'Message not found.';
+                $noticeType = 'error';
+            }
         }
     }
 
@@ -1087,6 +1114,46 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
+    if ($action === 'remove_duplicate_products') {
+        if (!hash_equals((string) $_SESSION['backup_csrf'], (string) ($_POST['backup_csrf'] ?? ''))) {
+            $notice = 'Delete request expired. Reload Settings and try again.';
+            $noticeType = 'error';
+            $showProfileSettingsPopup = true;
+        } else {
+            $mysqli = appDb();
+            $removedCount = appRemoveDuplicateProducts($mysqli);
+            if ($removedCount > 0) {
+                $_SESSION['admin_backup_notice'] = "Removed $removedCount duplicate product(s).";
+                header('Location: admin.php?section=profile&settings_popup=1');
+                exit;
+            } else {
+                $_SESSION['admin_backup_notice'] = 'No duplicate products found.';
+                header('Location: admin.php?section=profile&settings_popup=1');
+                exit;
+            }
+        }
+    }
+
+    if ($action === 'remove_duplicate_products_by_name_and_image') {
+        if (!hash_equals((string) $_SESSION['backup_csrf'], (string) ($_POST['backup_csrf'] ?? ''))) {
+            $notice = 'Delete request expired. Reload Settings and try again.';
+            $noticeType = 'error';
+            $showProfileSettingsPopup = true;
+        } else {
+            $mysqli = appDb();
+            $removedCount = appRemoveDuplicateProductsByNameAndImage($mysqli);
+            if ($removedCount > 0) {
+                $_SESSION['admin_backup_notice'] = "Removed $removedCount duplicate product(s) by name and image.";
+                header('Location: admin.php?section=profile&settings_popup=1');
+                exit;
+            } else {
+                $_SESSION['admin_backup_notice'] = 'No duplicate products found by name and image.';
+                header('Location: admin.php?section=profile&settings_popup=1');
+                exit;
+            }
+        }
+    }
+
     if ($action === 'update_slider_settings') {
         $showProfileSettingsPopup = true;
         $images = array_values(array_filter((array) ($store['settings']['slider']['images'] ?? []), 'is_string'));
@@ -1382,6 +1449,26 @@ $selectedOrderClientEmail = trim((string) ($selectedOrderClient['email'] ?? ($se
 $selectedOrderClientName = trim((string) ($selectedOrderClient['name'] ?? ($selectedOrder['customer'] ?? 'Client')));
 $selectedOrderClientInitial = strtoupper(substr($selectedOrderClientName, 0, 1)) ?: 'C';
 
+$selectedOrderMessages = [];
+if ($selectedOrder !== null) {
+    $orderEmail = strtolower($selectedOrderClientEmail);
+    $orderProductId = (string) ($selectedOrder['product_id'] ?? '');
+    $selectedOrderMessages = array_reverse(array_values(array_filter($store['messages'] ?? [], function ($message) use ($orderEmail, $orderProductId) {
+        $msgEmail = strtolower((string) ($message['to'] ?? ''));
+        $msgFromEmail = strtolower((string) ($message['from_email'] ?? ''));
+        $msgProductId = (string) ($message['product_id'] ?? '');
+        $customizationId = appMessageCustomizationId($message);
+
+        if ($msgEmail === $orderEmail || $msgFromEmail === $orderEmail) {
+            if ($customizationId !== '') {
+                return $msgProductId === $orderProductId;
+            }
+            return true;
+        }
+        return false;
+    })));
+}
+
 $selectedCustomizationRequest = null;
 foreach ($customizationRequests as $request) {
     if (($request['id'] ?? '') === $selectedCustomizationId) {
@@ -1394,6 +1481,24 @@ $selectedCustomizationClientPhone = trim((string) ($selectedCustomizationClient[
 $selectedCustomizationMessages = $selectedCustomizationRequest === null ? [] : array_reverse(array_values(array_filter($store['messages'] ?? [], function ($message) use ($selectedCustomizationId) {
     return appMessageCustomizationId($message) === $selectedCustomizationId;
 })));
+
+$customerHasMessaged = false;
+if ($selectedCustomizationRequest !== null) {
+    $customerEmail = strtolower((string) ($selectedCustomizationRequest['customer_email'] ?? ''));
+    foreach (($store['messages'] ?? []) as $message) {
+        $msgCustomizationId = appMessageCustomizationId($message);
+        $msgFromEmail = strtolower((string) ($message['from_email'] ?? ''));
+        $msgTo = strtolower((string) ($message['to'] ?? ''));
+        if ($msgCustomizationId === $selectedCustomizationId
+            && $msgFromEmail === $customerEmail
+            && $msgTo === 'admin'
+            && appDisplayChatMessage((string) ($message['message'] ?? '')) !== '') {
+            $customerHasMessaged = true;
+            break;
+        }
+    }
+}
+
 $customizationStatusCounts = [];
 foreach ($customizationRequests as $request) {
     $status = (string) ($request['status'] ?? 'Pending');
@@ -1470,8 +1575,8 @@ $showProductForm = $showAddProductForm || $editingProduct['id'] !== '';
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Furniture System Admin</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+    <title>RN Furniture Admin</title>
     <style>
         :root {
             --surface: #ffffff;
@@ -2429,9 +2534,21 @@ $showProductForm = $showAddProductForm || $editingProduct['id'] !== '';
             margin-top: 6px;
             display: flex;
             justify-content: space-between;
+            align-items: center;
             gap: 10px;
             font-size: 0.64rem;
             opacity: 0.82;
+        }
+        .admin-chat-delete-form {
+            margin-left: auto;
+        }
+        .admin-chat-delete-form .btn {
+            padding: 4px 8px;
+            font-size: 0.65rem;
+        }
+        .admin-chat-delete-form svg {
+            width: 14px;
+            height: 14px;
         }
         .admin-chat-compose {
             display: grid;
@@ -3144,17 +3261,64 @@ $showProductForm = $showAddProductForm || $editingProduct['id'] !== '';
         .customization-image-dialog h2 { margin: 12px 0; font-size: 1rem; }
         .customization-image-dialog img { display: block; width: 100%; max-height: 70dvh; object-fit: contain; }
         .customization-image-dialog.is-zoomed img { width: 160%; max-height: none; max-width: none; cursor: zoom-out; }
+        .customization-message-disclosure {
+            margin-top: 14px;
+        }
+        .customization-message-disclosure > summary {
+            position: relative;
+            display: inline-grid;
+            place-items: center;
+            width: 48px;
+            height: 48px;
+            border: 1px solid var(--line);
+            border-radius: 50%;
+            background: var(--brand);
+            color: #fff;
+            cursor: pointer;
+            list-style: none;
+            box-shadow: 0 10px 24px rgba(17, 40, 92, 0.16);
+        }
+        .customization-message-disclosure > summary::-webkit-details-marker { display: none; }
+        .customization-message-disclosure > summary svg {
+            width: 22px;
+            height: 22px;
+            fill: none;
+            stroke: currentColor;
+            stroke-width: 2;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+        .customization-message-count {
+            position: absolute;
+            top: -5px;
+            right: -5px;
+            display: grid;
+            place-items: center;
+            min-width: 20px;
+            height: 20px;
+            padding: 0 5px;
+            border: 2px solid #fff;
+            border-radius: 10px;
+            background: #d74c4c;
+            color: #fff;
+            font-size: 0.62rem;
+            line-height: 1;
+        }
+        .customization-message-disclosure[open] > summary { background: #0e2c70; }
+        .customization-message-disclosure > .panel { margin-top: 10px; }
         .restore-done-overlay { position: fixed; inset: 0; z-index: 9999; display: grid; place-items: center; padding: 20px; background: rgba(12, 25, 50, .55); }
         .restore-done-card { width: min(100%, 320px); padding: 24px; border-radius: 18px; background: #fff; text-align: center; box-shadow: 0 20px 55px rgba(12, 25, 50, .25); }
         .restore-done-card p { margin: 0 0 18px; color: var(--brand); font-weight: 700; }
     </style>
+    <link rel="stylesheet" href="responsive.css">
+    <script src="responsive.js" defer></script>
 </head>
 <body data-language-role="admin">
     <div class="shell">
         <header class="topbar">
             <div class="topbar-head">
                 <div>
-                    <strong>Furniture System</strong>
+                    <strong>RN Furniture</strong>
                     <span>Seller Dashboard</span>
                 </div>
             </div>
@@ -3291,6 +3455,21 @@ $showProductForm = $showAddProductForm || $editingProduct['id'] !== '';
                                         <div class="admin-chat-meta">
                                             <span><?= $isOutgoing ? 'Admin' : htmlspecialchars((string) ($message['from_name'] ?? 'User'), ENT_QUOTES, 'UTF-8') ?></span>
                                             <span><?= htmlspecialchars((string) ($message['created_at'] ?? ''), ENT_QUOTES, 'UTF-8') ?></span>
+                                            <?php if ($isOutgoing): ?>
+                                                <form method="post" class="admin-chat-delete-form" onsubmit="return confirm('Delete this message?');">
+                                                    <input type="hidden" name="action" value="delete_message">
+                                                    <input type="hidden" name="message_id" value="<?= htmlspecialchars((string) ($message['id'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
+                                                    <input type="hidden" name="thread_email" value="<?= htmlspecialchars((string) ($activeChat['email'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
+                                                    <button class="btn btn-soft btn-sm" type="submit" aria-label="Delete message">
+                                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                                            <polyline points="3 6 5 6 21 6"/>
+                                                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                                                            <line x1="10" y1="11" x2="10" y2="17"/>
+                                                            <line x1="14" y1="11" x2="14" y2="17"/>
+                                                        </svg>
+                                                    </button>
+                                                </form>
+                                            <?php endif; ?>
                                         </div>
                                     </article>
                                 <?php endforeach; ?>
@@ -3574,6 +3753,61 @@ $showProductForm = $showAddProductForm || $editingProduct['id'] !== '';
                                 </div>
                             </section>
                         </details>
+                        <details class="order-messages-disclosure" <?= $selectedOrderMessages ? 'open' : '' ?>>
+                            <summary class="btn btn-soft" aria-label="Open order messages" title="Messages">
+                                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5a8.5 8.5 0 0 1-8.5 8.5A8.4 8.4 0 0 1 8 18.7L3 20l1.3-5A8.4 8.4 0 0 1 3 11.5 8.5 8.5 0 0 1 11.5 3h1A8.5 8.5 0 0 1 21 11.5Z"/></svg>
+                                <span>Messages (<?= count($selectedOrderMessages) ?>)</span>
+                            </summary>
+                            <section class="panel">
+                                <div class="section-title"><h2>Order Messages</h2></div>
+                                <?php if ($selectedOrderMessages === []): ?>
+                                    <p class="stat-label">No messages for this order.</p>
+                                <?php else: ?>
+                                    <div class="admin-chat-thread">
+                                        <?php foreach ($selectedOrderMessages as $message): ?>
+                                            <?php $isOutgoing = strcasecmp((string) ($message['from_email'] ?? ''), $adminEmail) === 0; ?>
+                                            <?php $customizationId = appMessageCustomizationId($message); ?>
+                                            <article class="admin-chat-bubble <?= $isOutgoing ? 'outgoing' : 'incoming' ?>">
+                                                <?php if (trim((string) ($message['image_path'] ?? '')) !== ''): ?>
+                                                    <a href="<?= htmlspecialchars((string) $message['image_path'], ENT_QUOTES, 'UTF-8') ?>" target="_blank" rel="noopener noreferrer"><img class="admin-chat-image" src="<?= htmlspecialchars((string) $message['image_path'], ENT_QUOTES, 'UTF-8') ?>" alt="Order attachment"></a>
+                                                <?php endif; ?>
+                                                <?php if (appDisplayChatMessage((string) ($message['message'] ?? '')) !== ''): ?><p><?= nl2br(htmlspecialchars(appDisplayChatMessage((string) $message['message']), ENT_QUOTES, 'UTF-8')) ?></p><?php endif; ?>
+                                                <div class="admin-chat-meta">
+                                                    <span><?= $isOutgoing ? 'Admin' : htmlspecialchars((string) ($message['from_name'] ?? 'User'), ENT_QUOTES, 'UTF-8') ?></span>
+                                                    <span><?= htmlspecialchars((string) ($message['created_at'] ?? ''), ENT_QUOTES, 'UTF-8') ?></span>
+                                                    <?php if ($customizationId !== ''): ?>
+                                                        <span class="status-pill processing">Customization: <?= htmlspecialchars($customizationId, ENT_QUOTES, 'UTF-8') ?></span>
+                                                    <?php endif; ?>
+                                                    <?php if ($isOutgoing): ?>
+                                                        <form method="post" class="admin-chat-delete-form" onsubmit="return confirm('Delete this message?');">
+                                                            <input type="hidden" name="action" value="delete_message">
+                                                            <input type="hidden" name="message_id" value="<?= htmlspecialchars((string) ($message['id'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
+                                                            <input type="hidden" name="thread_email" value="<?= htmlspecialchars($selectedOrderClientEmail, ENT_QUOTES, 'UTF-8') ?>">
+                                                            <button class="btn btn-soft btn-sm" type="submit" aria-label="Delete message"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg></button>
+                                                        </form>
+                                                    <?php endif; ?>
+                                                </div>
+                                            </article>
+                                        <?php endforeach; ?>
+                                    </div>
+                                <?php endif; ?>
+                                 <form class="admin-chat-compose" method="post" enctype="multipart/form-data">
+                                    <input type="hidden" name="action" value="admin_send_message">
+                                    <input type="hidden" name="recipient_email" value="<?= htmlspecialchars($selectedOrderClientEmail, ENT_QUOTES, 'UTF-8') ?>">
+                                    <input type="hidden" name="recipient_name" value="<?= htmlspecialchars($selectedOrderClientName, ENT_QUOTES, 'UTF-8') ?>">
+                                    <input type="hidden" name="product_id" value="<?= htmlspecialchars((string) ($selectedOrder['product_id'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
+                                    <div class="admin-chat-compose-input">
+                                        <label for="orderMessageInput" class="visually-hidden">Message</label>
+                                        <textarea id="orderMessageInput" name="message" placeholder="Type a message..." rows="2"></textarea>
+                                    </div>
+                                    <div class="admin-chat-compose-attach">
+                                        <label class="btn btn-soft" for="orderMessageImage"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 17"/></svg> Attach</label>
+                                        <input type="file" id="orderMessageImage" name="message_image" accept="image/*" style="display:none;">
+                                    </div>
+                                    <div class="admin-chat-compose-foot"><button class="btn btn-primary" type="submit">Send</button></div>
+                                </form>
+                            </section>
+                        </details>
                     </section>
                 <?php endif; ?>
             <?php endif; ?>
@@ -3730,19 +3964,46 @@ $showProductForm = $showAddProductForm || $editingProduct['id'] !== '';
                             <?php endif; ?>
                             <?php if (!in_array((string) ($selectedCustomizationRequest['status'] ?? ''), ['Completed', 'Cancelled', 'Unclaimed'], true)): ?>
                                 <?php $customStatus = (string) ($selectedCustomizationRequest['status'] ?? ''); ?>
-                                <form class="order-form" method="post" onsubmit="return !['Cancelled','Unclaimed'].includes(this.elements.status.value) || confirm('Close this customization request?');">
+                                <?php if ($customStatus === 'Quotation Sent'): ?>
+                                    <form class="order-form" method="post">
+                                        <input type="hidden" name="action" value="update_customization_status">
+                                        <input type="hidden" name="request_id" value="<?= htmlspecialchars((string) ($selectedCustomizationRequest['id'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
+                                        <input type="hidden" name="status" value="Approved">
+                                        <button class="btn btn-primary" type="submit">Mark Approved</button>
+                                    </form>
+                                <?php elseif ($customStatus === 'Down Payment Paid' && $paymentConfirmed): ?>
+                                    <form class="order-form" method="post">
+                                        <input type="hidden" name="action" value="update_customization_status">
+                                        <input type="hidden" name="request_id" value="<?= htmlspecialchars((string) ($selectedCustomizationRequest['id'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
+                                        <input type="hidden" name="status" value="Ongoing">
+                                        <button class="btn btn-primary" type="submit">Start Production</button>
+                                    </form>
+                                <?php elseif (in_array($customStatus, ['Ongoing', 'In Production'], true)): ?>
+                                    <form class="order-form" method="post">
+                                        <input type="hidden" name="action" value="update_customization_status">
+                                        <input type="hidden" name="request_id" value="<?= htmlspecialchars((string) ($selectedCustomizationRequest['id'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
+                                        <input type="hidden" name="status" value="Ready">
+                                        <button class="btn btn-primary" type="submit">Mark Ready</button>
+                                    </form>
+                                <?php elseif ($customStatus === 'Ready'): ?>
+                                    <form class="order-form" method="post">
+                                        <input type="hidden" name="action" value="update_customization_status">
+                                        <input type="hidden" name="request_id" value="<?= htmlspecialchars((string) ($selectedCustomizationRequest['id'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
+                                        <input type="hidden" name="status" value="Completed">
+                                        <button class="btn btn-primary" type="submit">Mark Finished</button>
+                                    </form>
+                                <?php endif; ?>
+                                <form class="order-form" method="post" style="margin-top:10px;" onsubmit="return confirm('Close this customization request?');">
                                     <input type="hidden" name="action" value="update_customization_status">
                                     <input type="hidden" name="request_id" value="<?= htmlspecialchars((string) ($selectedCustomizationRequest['id'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
-                                    <select name="status" required aria-label="Choose customization action">
-                                        <option value="" disabled selected>Choose action</option>
-                                        <?php if ($customStatus === 'Quotation Sent'): ?><option value="Approved">Approved (after quotation)</option><?php endif; ?>
-                                        <?php if ($customStatus === 'Down Payment Paid' && $paymentConfirmed): ?><option value="Ongoing">Ongoing</option><?php endif; ?>
-                                        <?php if (in_array($customStatus, ['Ongoing', 'In Production'], true)): ?><option value="Ready">Ready</option><?php endif; ?>
-                                        <?php if ($customStatus === 'Ready'): ?><option value="Completed">Finished</option><?php endif; ?>
-                                        <option value="Cancelled">Cancelled</option>
-                                        <option value="Unclaimed">Unclaimed</option>
-                                    </select>
-                                    <button class="btn btn-primary" type="submit">Apply</button>
+                                    <input type="hidden" name="status" value="Cancelled">
+                                    <button class="btn btn-danger" type="submit">Cancel</button>
+                                </form>
+                                <form class="order-form" method="post" style="margin-top:10px;" onsubmit="return confirm('Mark as unclaimed?');">
+                                    <input type="hidden" name="action" value="update_customization_status">
+                                    <input type="hidden" name="request_id" value="<?= htmlspecialchars((string) ($selectedCustomizationRequest['id'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
+                                    <input type="hidden" name="status" value="Unclaimed">
+                                    <button class="btn btn-danger" type="submit">Unclaimed</button>
                                 </form>
                             <?php endif; ?>
                             <form method="post" style="margin-top:14px;" onsubmit="return confirm('Delete this customization order? You can restore it from Backup History.');">
@@ -3752,30 +4013,42 @@ $showProductForm = $showAddProductForm || $editingProduct['id'] !== '';
                                 <button class="btn btn-danger" type="submit">Delete Customization Order</button>
                             </form>
                         </section>
+                         <details class="customization-message-disclosure" <?= isset($_GET['messages']) ? 'open' : '' ?>>
+                             <summary aria-label="Open customization messages" title="Messages">
+                                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5a8.5 8.5 0 0 1-8.5 8.5A8.4 8.4 0 0 1 8 18.7L3 20l1.3-5A8.4 8.4 0 0 1 3 11.5 8.5 8.5 0 0 1 11.5 3h1A8.5 8.5 0 0 1 21 11.5Z"/></svg>
+                                 <span class="customization-message-count"><?= count($selectedCustomizationMessages) ?></span>
+                             </summary>
                          <section class="panel">
                              <div class="section-title"><h2>Customization Messages</h2></div>
-                             <div class="admin-chat-thread">
-                                 <?php foreach ($selectedCustomizationMessages as $message): ?>
-                                     <?php $isOutgoing = strcasecmp((string) ($message['from_email'] ?? ''), $adminEmail) === 0; ?>
-                                     <article class="admin-chat-bubble <?= $isOutgoing ? 'outgoing' : 'incoming' ?>">
-                                         <?php if (trim((string) ($message['image_path'] ?? '')) !== ''): ?>
-                                             <a href="<?= htmlspecialchars((string) $message['image_path'], ENT_QUOTES, 'UTF-8') ?>" target="_blank" rel="noopener noreferrer"><img class="admin-chat-image" src="<?= htmlspecialchars((string) $message['image_path'], ENT_QUOTES, 'UTF-8') ?>" alt="Customization attachment"></a>
-                                         <?php endif; ?>
-                                         <?php if (appDisplayChatMessage((string) ($message['message'] ?? '')) !== ''): ?><p><?= nl2br(htmlspecialchars(appDisplayChatMessage((string) $message['message']), ENT_QUOTES, 'UTF-8')) ?></p><?php endif; ?>
-                                         <div class="admin-chat-meta"><span><?= $isOutgoing ? 'Admin' : htmlspecialchars((string) ($message['from_name'] ?? 'User'), ENT_QUOTES, 'UTF-8') ?></span><span><?= htmlspecialchars((string) ($message['created_at'] ?? ''), ENT_QUOTES, 'UTF-8') ?></span></div>
-                                     </article>
-                                 <?php endforeach; ?>
-                             </div>
-                              <form class="admin-chat-compose" method="post" enctype="multipart/form-data">
-                                 <input type="hidden" name="action" value="admin_send_message">
-                                 <input type="hidden" name="customization_id" value="<?= htmlspecialchars((string) ($selectedCustomizationRequest['id'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
-                                 <input type="hidden" name="recipient_email" value="<?= htmlspecialchars((string) ($selectedCustomizationRequest['customer_email'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
-                                 <input type="hidden" name="product_id" value="<?= htmlspecialchars((string) ($selectedCustomizationRequest['product_id'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
-                                 <textarea name="message" placeholder="Reply about this customization..."></textarea>
-                                 <label class="admin-chat-attach">Attach image <input type="file" name="message_image" accept="image/*"></label>
-                                 <div class="admin-chat-compose-foot"><span>Only this customization order will show this message.</span><button class="btn btn-primary" type="submit">Send Message</button></div>
-                              </form>
-                          </section>
+<div class="admin-chat-thread">
+                                  <?php foreach ($selectedCustomizationMessages as $message): ?>
+                                      <?php $isOutgoing = strcasecmp((string) ($message['from_email'] ?? ''), $adminEmail) === 0; ?>
+                                      <article class="admin-chat-bubble <?= $isOutgoing ? 'outgoing' : 'incoming' ?>">
+                                          <?php if (trim((string) ($message['image_path'] ?? '')) !== ''): ?>
+                                              <a href="<?= htmlspecialchars((string) $message['image_path'], ENT_QUOTES, 'UTF-8') ?>" target="_blank" rel="noopener noreferrer"><img class="admin-chat-image" src="<?= htmlspecialchars((string) $message['image_path'], ENT_QUOTES, 'UTF-8') ?>" alt="Customization attachment"></a>
+                                          <?php endif; ?>
+                                          <?php if (appDisplayChatMessage((string) ($message['message'] ?? '')) !== ''): ?><p><?= nl2br(htmlspecialchars(appDisplayChatMessage((string) $message['message']), ENT_QUOTES, 'UTF-8')) ?></p><?php endif; ?>
+                                          <div class="admin-chat-meta"><span><?= $isOutgoing ? 'Admin' : htmlspecialchars((string) ($message['from_name'] ?? 'User'), ENT_QUOTES, 'UTF-8') ?></span><span><?= htmlspecialchars((string) ($message['created_at'] ?? ''), ENT_QUOTES, 'UTF-8') ?></span><?php if ($isOutgoing): ?><form method="post" class="admin-chat-delete-form" onsubmit="return confirm('Delete this message?');"><input type="hidden" name="action" value="delete_message"><input type="hidden" name="message_id" value="<?= htmlspecialchars((string) ($message['id'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"><input type="hidden" name="thread_email" value="<?= htmlspecialchars((string) ($selectedCustomizationRequest['customer_email'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"><button class="btn btn-soft btn-sm" type="submit" aria-label="Delete message"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg></button></form><?php endif; ?></div>
+                                      </article>
+                                  <?php endforeach; ?>
+                              </div>
+                              <?php if (!$customerHasMessaged): ?>
+                                  <p class="stat-label" style="margin-top:14px; padding:12px; background:#fef3c7; border:1px solid #fcd34d; border-radius:8px; color:#92400e;">
+                                      <strong>Cannot reply yet:</strong> The customer must send a message first before you can reply to this customization.
+                                  </p>
+                              <?php else: ?>
+                               <form class="admin-chat-compose" method="post" enctype="multipart/form-data">
+                                  <input type="hidden" name="action" value="admin_send_message">
+                                  <input type="hidden" name="customization_id" value="<?= htmlspecialchars((string) ($selectedCustomizationRequest['id'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
+                                  <input type="hidden" name="recipient_email" value="<?= htmlspecialchars((string) ($selectedCustomizationRequest['customer_email'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
+                                  <input type="hidden" name="product_id" value="<?= htmlspecialchars((string) ($selectedCustomizationRequest['product_id'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
+                                  <textarea name="message" placeholder="Reply about this customization..."></textarea>
+                                  <label class="admin-chat-attach">Attach image <input type="file" name="message_image" accept="image/*"></label>
+                                  <div class="admin-chat-compose-foot"><span>Only this customization order will show this message.</span><button class="btn btn-primary" type="submit">Send Message</button></div>
+                               </form>
+                              <?php endif; ?>
+                           </section>
+                          </details>
                           <details class="customer-disclosure">
                               <summary class="btn btn-soft">View Customer Info</summary>
                               <section class="panel client-card">
@@ -4010,6 +4283,16 @@ $showProductForm = $showAddProductForm || $editingProduct['id'] !== '';
                             <input type="hidden" name="backup_csrf" value="<?= htmlspecialchars((string) $_SESSION['backup_csrf'], ENT_QUOTES, 'UTF-8') ?>">
                             <button class="btn btn-primary" type="submit">Create Backup</button>
                         </form>
+                        <form method="post" class="actions" style="margin-bottom:12px;">
+                            <input type="hidden" name="action" value="remove_duplicate_products">
+                            <input type="hidden" name="backup_csrf" value="<?= htmlspecialchars((string) $_SESSION['backup_csrf'], ENT_QUOTES, 'UTF-8') ?>">
+                            <button class="btn btn-danger" type="submit" onclick="return confirm('This will remove all duplicate products (keeping the oldest entry for each name). Are you sure?');">Remove Duplicate Products</button>
+                        </form>
+                        <form method="post" class="actions" style="margin-bottom:12px;">
+                            <input type="hidden" name="action" value="remove_duplicate_products_by_name_and_image">
+                            <input type="hidden" name="backup_csrf" value="<?= htmlspecialchars((string) $_SESSION['backup_csrf'], ENT_QUOTES, 'UTF-8') ?>">
+                            <button class="btn btn-danger" type="submit" onclick="return confirm('This will remove all duplicate products with the SAME NAME OR SAME IMAGE (keeping the oldest entry). Are you sure?');">Remove Duplicates by Name or Image</button>
+                        </form>
                         <details class="backup-disclosure backup-history-toggle">
                             <summary>Backup History</summary>
                             <p class="stat-label">All successfully created backups are listed below.</p>
@@ -4029,7 +4312,6 @@ $showProductForm = $showAddProductForm || $editingProduct['id'] !== '';
                                                     <td><?= $backupSize < 1048576 ? number_format($backupSize / 1024, 1) . ' KB' : number_format($backupSize / 1048576, 1) . ' MB' ?></td>
                                                     <td>
                                                         <div class="backup-table-actions">
-                                                            <a class="btn btn-soft" href="admin.php?download_saved_backup=<?= urlencode($backupName) ?>" download="<?= htmlspecialchars($backupName, ENT_QUOTES, 'UTF-8') ?>">Download</a>
                                                             <form method="post" onsubmit="return confirm('Restore this backup? Current data will be saved to a new backup first.');">
                                                                 <input type="hidden" name="action" value="restore_backup">
                                                                 <input type="hidden" name="backup_csrf" value="<?= htmlspecialchars((string) $_SESSION['backup_csrf'], ENT_QUOTES, 'UTF-8') ?>">

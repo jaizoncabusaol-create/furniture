@@ -1102,7 +1102,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 1
             ));
             array_unshift($store['messages'], appCreateMessageRecord(
-                'Furniture System',
+                'RN Furniture',
                 'system',
                 (string) ($request['customer_email'] ?? ''),
                 (string) ($request['product_id'] ?? ''),
@@ -1126,7 +1126,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         [$request, $requestIndex] = findCustomizationRequestById($store['customization_requests'] ?? [], $requestId, (string) ($currentUser['email'] ?? ''));
         $status = (string) ($request['status'] ?? '');
         $canCancel = in_array($status, ['Pending', 'Quotation Sent'], true);
-        $canDelete = in_array($status, ['Pending', 'Cancelled'], true);
+        $canDelete = $request !== null;
 
         if ($request === null || ($action === 'cancel_customization_request' && !$canCancel) || ($action === 'delete_customization_request' && !$canDelete)) {
             $notice = 'Customization request could not be updated.';
@@ -1419,8 +1419,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if ($updated) {
             appSaveStore($store);
-            setUserFlashNotice($action === 'delete_customization_request' ? 'Order deleted.' : 'Order cancelled.');
-            header('Location: user.php?view=orders&order_type=customization');
+            setUserFlashNotice('Order cancelled.');
+            header('Location: user.php?view=orders&order_type=normal');
             exit;
         }
 
@@ -1429,13 +1429,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $selectedView = 'orders';
     }
 
-    if ($action === 'delete_completed_order') {
+    if ($action === 'delete_completed_order' || $action === 'delete_user_order') {
         $orderId = trim($_POST['order_id'] ?? '');
+        $matchedOrder = false;
         foreach (($store['orders'] ?? []) as $order) {
             if (($order['id'] ?? '') === $orderId
-                && ($order['customer_email'] ?? '') === ($currentUser['email'] ?? '')
-                && in_array((string) ($order['status'] ?? ''), ['Complete', 'Declined'], true)) {
+                && ($order['customer_email'] ?? '') === ($currentUser['email'] ?? '')) {
                 appArchiveDeletedRecord($store, 'order', $order);
+                $matchedOrder = true;
                 break;
             }
         }
@@ -1443,19 +1444,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $store['orders'] = array_values(array_filter(($store['orders'] ?? []), function ($order) use ($orderId, $currentUser) {
             return !(
                 ($order['id'] ?? '') === $orderId &&
-                ($order['customer_email'] ?? '') === ($currentUser['email'] ?? '') &&
-                in_array((string) ($order['status'] ?? ''), ['Complete', 'Declined'], true)
+                ($order['customer_email'] ?? '') === ($currentUser['email'] ?? '')
             );
         }));
 
-        if (count($store['orders']) !== $beforeCount) {
+        if ($matchedOrder && count($store['orders']) !== $beforeCount) {
             appSaveStore($store);
             setUserFlashNotice('Order deleted.');
             header('Location: user.php?view=orders');
             exit;
         }
 
-        $notice = 'Completed order could not be removed.';
+        $notice = 'Order could not be deleted.';
         $noticeType = 'error';
         $selectedView = 'orders';
     }
@@ -1918,13 +1918,13 @@ if ($sliderProducts === []) {
 }
 $sliderProducts = $sliderProducts === [] ? [[
     'id' => '',
-    'name' => 'Make Your Home More Comfortable',
+    'name' => 'RN Furniture',
     'description' => 'Quality furniture for every room.',
     'image' => '',
 ]] : $sliderProducts;
 $sliderProducts = array_slice($sliderProducts, 0, 4);
 $heroSlides = array_map(static function ($image) {
-    return ['image' => $image, 'alt' => 'Furniture slider image'];
+    return ['image' => $image, 'alt' => 'RN Furniture'];
 }, array_values(array_filter((array) ($store['settings']['slider']['images'] ?? []), static function ($image) {
     return is_string($image) && str_starts_with($image, 'uploads/') && is_file(__DIR__ . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $image));
 })));
@@ -1937,7 +1937,7 @@ if ($heroSlides === []) {
 
         return [
             'image' => $image,
-            'alt' => (string) ($product['name'] ?? 'Furniture banner'),
+            'alt' => 'RN Furniture',
         ];
     }, $sliderProducts)));
 }
@@ -2077,7 +2077,7 @@ $canPlaceOrder = userHasCompleteOrderProfile($currentUserRecord);
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
     <title>RN Furniture</title>
     <style>
         :root {
@@ -2349,6 +2349,7 @@ $canPlaceOrder = userHasCompleteOrderProfile($currentUserRecord);
         }
         .hero-grid { display: grid; grid-template-columns: 1fr; min-height: min(var(--hero-height, 145px), 145px); }
         .hero-visual {
+            position: relative;
             min-height: min(var(--hero-height, 145px), 145px);
             max-height: min(var(--hero-height, 145px), 145px);
             overflow: hidden;
@@ -2361,6 +2362,23 @@ $canPlaceOrder = userHasCompleteOrderProfile($currentUserRecord);
             object-fit: var(--hero-fit, contain);
             display: block;
             background: var(--hero-bg, #f4f6fb);
+        }
+        .hero-brand {
+            position: absolute;
+            left: 12px;
+            bottom: 12px;
+            z-index: 2;
+            display: inline-flex;
+            align-items: center;
+            min-height: 34px;
+            padding: 7px 11px;
+            border-radius: 6px;
+            background: rgba(14, 44, 112, 0.9);
+            color: #fff;
+            font-size: 0.78rem;
+            font-weight: 800;
+            line-height: 1;
+            box-shadow: 0 6px 18px rgba(14, 44, 112, 0.22);
         }
         .hero-dots {
             display: flex;
@@ -3068,6 +3086,59 @@ $canPlaceOrder = userHasCompleteOrderProfile($currentUserRecord);
         .order-disclosure-summary::-webkit-details-marker { display: none; }
         .order-disclosure-summary::after { content: '⌄'; color: var(--brand); font-size: 1.2rem; margin-left: auto; }
         .order-disclosure[open] > .order-disclosure-summary::after { content: '⌃'; }
+        .message-icon-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 36px;
+            height: 36px;
+            border: 0;
+            border-radius: 10px;
+            background: #edf3ff;
+            color: var(--brand);
+            cursor: pointer;
+            position: relative;
+            flex-shrink: 0;
+        }
+        .message-icon-btn:hover {
+            background: #dce8ff;
+        }
+        .message-icon-btn svg {
+            width: 20px;
+            height: 20px;
+            stroke: currentColor;
+            fill: none;
+            stroke-width: 2;
+        }
+        .message-badge {
+            position: absolute;
+            top: -2px;
+            right: -2px;
+            min-width: 16px;
+            height: 16px;
+            padding: 0 4px;
+            border-radius: 999px;
+            background: #ff8b1f;
+            color: #fff;
+            font-size: 0.56rem;
+            font-weight: 700;
+            display: inline-grid;
+            place-items: center;
+            line-height: 1;
+        }
+        .customization-chat {
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            margin: 10px 0;
+            padding: 10px;
+            background: #f8fbff;
+        }
+        .customization-chat summary {
+            cursor: pointer;
+            font-weight: 700;
+            color: var(--brand);
+            padding: 5px 0;
+        }
         .order-summary-image { width: 56px; height: 56px; flex: 0 0 56px; border-radius: 8px; object-fit: cover; background: #f3f6fb; }
         .order-summary-main { display: grid; gap: 3px; min-width: 130px; flex: 1; }
         .order-summary-main strong { font-size: .9rem; color: var(--text); }
@@ -5461,6 +5532,8 @@ $canPlaceOrder = userHasCompleteOrderProfile($currentUserRecord);
             }
         }
     </style>
+    <link rel="stylesheet" href="responsive.css">
+    <script src="responsive.js" defer></script>
 </head>
 <body data-language-role="user">
     <div class="app <?= $selectedView === 'mix' ? 'mix-app' : '' ?>">
@@ -5526,6 +5599,7 @@ $canPlaceOrder = userHasCompleteOrderProfile($currentUserRecord);
                             <article class="hero-slide <?= $index === 0 ? 'is-active' : '' ?>">
                                 <div class="hero-grid">
                                     <div class="hero-visual">
+                                        <span class="hero-brand">RN Furniture</span>
                                         <img src="<?= htmlspecialchars((string) ($heroSlide['image'] ?? ''), ENT_QUOTES, 'UTF-8') ?>" alt="<?= htmlspecialchars((string) ($heroSlide['alt'] ?? 'Furniture banner'), ENT_QUOTES, 'UTF-8') ?>">
                                     </div>
                                 </div>
@@ -5841,10 +5915,10 @@ $canPlaceOrder = userHasCompleteOrderProfile($currentUserRecord);
                                 </div>
                                 <p>Total: P<?= number_format(((float) ($item['price'] ?? 0)) * (int) ($item['quantity'] ?? 1), 2) ?></p>
                                 <div class="detail-actions">
-                                    <form method="post">
+                                    <form method="post" onsubmit="return confirm('Delete this item from your cart?');">
                                         <input type="hidden" name="action" value="remove_cart_item">
                                         <input type="hidden" name="cart_id" value="<?= htmlspecialchars($item['id'] ?? '', ENT_QUOTES, 'UTF-8') ?>">
-                                        <button class="message-btn" type="submit">Remove</button>
+                                        <button class="message-btn" type="submit">Delete</button>
                                     </form>
                                     <form method="post">
                                         <input type="hidden" name="action" value="place_cart_order">
@@ -5883,6 +5957,10 @@ $canPlaceOrder = userHasCompleteOrderProfile($currentUserRecord);
                                     <?php if ($customImage !== ''): ?><img class="order-summary-image" src="<?= htmlspecialchars($customImage, ENT_QUOTES, 'UTF-8') ?>" alt="<?= htmlspecialchars((string) ($request['product_name'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"><?php endif; ?>
                                     <span class="order-summary-main"><strong><?= htmlspecialchars((string) ($request['product_name'] ?? ''), ENT_QUOTES, 'UTF-8') ?></strong><small>Qty <?= (int) ($request['quantity'] ?? 1) ?> · Tap to view details</small></span>
                                     <span class="status-pill <?= htmlspecialchars($awaitingPayment ? 'processing' : (string) ($request['tone'] ?? customizationTone((string) ($request['status'] ?? 'Pending'))), ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars($awaitingPayment ? 'Payment pending confirmation' : (string) ($request['status'] ?? 'Pending'), ENT_QUOTES, 'UTF-8') ?></span>
+                                    <button type="button" class="message-icon-btn" data-toggle-target="customization-chat-<?= htmlspecialchars((string) ($request['id'] ?? ''), ENT_QUOTES, 'UTF-8') ?>" aria-label="Toggle messages" title="Messages">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:20px;height:20px;"><path d="M21 11.5a8.5 8.5 0 0 1-8.5 8.5A8.4 8.4 0 0 1 8 18.7L3 20l1.3-5A8.4 8.4 0 0 1 3 11.5 8.5 8.5 0 0 1 11.5 3h1A8.5 8.5 0 0 1 21 11.5Z"></path></svg>
+                                        <?php if (count($requestMessages) > 0): ?><span class="message-badge"><?= count($requestMessages) ?></span><?php endif; ?>
+                                    </button>
                                 </summary>
                                 <div class="order-disclosure-body">
                                 <div class="customization-request-head no-image">
@@ -5940,7 +6018,7 @@ $canPlaceOrder = userHasCompleteOrderProfile($currentUserRecord);
                                 <?php $requestMessages = array_reverse(array_values(array_filter($store['messages'] ?? [], function ($message) use ($request, $currentUser) {
                                     return appMessageCustomizationId($message) === (string) ($request['id'] ?? '') && (strcasecmp((string) ($message['from_email'] ?? ''), (string) ($currentUser['email'] ?? '')) === 0 || strcasecmp((string) ($message['to'] ?? ''), (string) ($currentUser['email'] ?? '')) === 0);
                                 }))); ?>
-                                <details class="customization-chat">
+                                <details class="customization-chat" id="customization-chat-<?= htmlspecialchars((string) ($request['id'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
                                     <summary>Customization Messages (<?= count($requestMessages) ?>)</summary>
                                     <?php foreach ($requestMessages as $requestMessage): ?>
                                         <article class="chat-bubble <?= strcasecmp((string) ($requestMessage['from_email'] ?? ''), (string) ($currentUser['email'] ?? '')) === 0 ? 'outgoing' : 'incoming' ?>">
@@ -5964,13 +6042,11 @@ $canPlaceOrder = userHasCompleteOrderProfile($currentUserRecord);
                                         <button class="message-btn" type="submit">Cancel Request</button>
                                     </form>
                                 <?php endif; ?>
-                                <?php if (in_array((string) ($request['status'] ?? ''), ['Pending', 'Cancelled'], true)): ?>
-                                    <form method="post" onsubmit="return confirm('Delete this customization request?');">
-                                        <input type="hidden" name="action" value="delete_customization_request">
-                                        <input type="hidden" name="request_id" value="<?= htmlspecialchars((string) ($request['id'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
-                                        <button class="message-btn" type="submit">Delete Request</button>
-                                    </form>
-                                <?php endif; ?>
+                                <form method="post" onsubmit="return confirm('Delete this customization request? It will be moved to the archive.');">
+                                    <input type="hidden" name="action" value="delete_customization_request">
+                                    <input type="hidden" name="request_id" value="<?= htmlspecialchars((string) ($request['id'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
+                                    <button class="message-btn" type="submit">Delete</button>
+                                </form>
                                 </div>
                             </details>
                         <?php endforeach; ?>
@@ -6006,11 +6082,16 @@ $canPlaceOrder = userHasCompleteOrderProfile($currentUserRecord);
                                                 <button class="message-btn" type="submit">Cancel Order</button>
                                             </form>
                                         <?php endif; ?>
+                                        <form method="post" onsubmit="return confirm('Delete this order? It will be moved to the archive.');">
+                                            <input type="hidden" name="action" value="delete_user_order">
+                                            <input type="hidden" name="order_id" value="<?= htmlspecialchars((string) ($order['id'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
+                                            <button class="message-btn" type="submit">Delete</button>
+                                        </form>
                                     </div>
                                 <?php elseif (in_array($orderStatus, ['Complete', 'Declined'], true)): ?>
                                     <div class="detail-actions" style="margin-top:8px;">
                                         <form method="post" onsubmit="return confirm('Delete this order?');">
-                                            <input type="hidden" name="action" value="delete_completed_order">
+                                            <input type="hidden" name="action" value="delete_user_order">
                                             <input type="hidden" name="order_id" value="<?= htmlspecialchars((string) ($order['id'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
                                             <button class="message-btn" type="submit">Delete</button>
                                         </form>
@@ -7545,6 +7626,23 @@ $canPlaceOrder = userHasCompleteOrderProfile($currentUserRecord);
                     imageLightboxPreview.alt = button.dataset.zoomAlt || 'Product image';
                     imageLightboxLabel.textContent = button.dataset.zoomAlt || 'Product image';
                     imageLightboxModal.classList.add('is-open');
+                });
+            });
+
+            const messageIconButtons = Array.from(document.querySelectorAll('.message-icon-btn'));
+            messageIconButtons.forEach(function (button) {
+                button.addEventListener('click', function (event) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    const targetId = button.dataset.toggleTarget;
+                    if (!targetId) {
+                        return;
+                    }
+                    const targetDetails = document.getElementById(targetId);
+                    if (!targetDetails) {
+                        return;
+                    }
+                    targetDetails.toggleAttribute('open');
                 });
             });
 
